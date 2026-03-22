@@ -1,5 +1,4 @@
 require('dotenv').config();
-console.log(process.env.JWT_SECRET);
 module.exports = {
     MONGO_URI: process.env.MONGO_URI || "mongodb://localhost:27017/r",
     PORT: process.env.PORT || 5000,

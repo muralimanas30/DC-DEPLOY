@@ -24,7 +24,6 @@ const errorHandler = (err, req, res, next) => {
         timestamp: err?.timestamp || new Date().toISOString(),
     };
 
-    console.log(payload);
     res.status(statusCode).json(payload);
 };
 

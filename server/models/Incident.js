@@ -26,8 +26,8 @@ const incidentSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ["open", "active", "pending-victim-consensus", "resolved", "closed"],
-            default: "open",
+            enum: ["active", "closed"],
+            default: "active",
             index: true,
         },
         creatorId: {
@@ -41,6 +41,18 @@ const incidentSchema = new mongoose.Schema(
             enum: ["victim", "volunteer", "admin"],
             default: "victim",
         },
+        victims: {
+            type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+            default: [],
+        },
+        volunteers: {
+            type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+            default: [],
+        },
+        admins: {
+            type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+            default: [],
+        },
         location: {
             type: {
                 type: String,
@@ -51,26 +63,6 @@ const incidentSchema = new mongoose.Schema(
                 type: [Number],
                 default: [0, 0],
             },
-        },
-        victimCount: {
-            type: Number,
-            default: 0,
-            min: 0,
-        },
-        volunteerCount: {
-            type: Number,
-            default: 0,
-            min: 0,
-        },
-        adminCount: {
-            type: Number,
-            default: 0,
-            min: 0,
-        },
-        activeParticipantCount: {
-            type: Number,
-            default: 0,
-            min: 0,
         },
     },
     {
