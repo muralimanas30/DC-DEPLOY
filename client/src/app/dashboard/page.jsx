@@ -11,6 +11,7 @@ export default async function  DashboardPage() {
 
     const session = await auth();
     const user  = session?.user;
+    const effectiveRole = user?.activeRole || user?.role;
     // const { assignedIncident } = useSelector((state) => state.incidents);
 
     return (
@@ -125,7 +126,7 @@ export default async function  DashboardPage() {
                             </div>
                         </>
                     )}
-                    {user && user.role === "victim" && (
+                    {user && effectiveRole === "victim" && (
                         <>
                             <h2 className="card-title mb-2">Victim Dashboard</h2>
                             <ul className="menu menu-vertical">
@@ -147,7 +148,7 @@ export default async function  DashboardPage() {
                             </div>
                         </>
                     )}
-                    {user && user.role === "volunteer" && (
+                    {user && effectiveRole === "volunteer" && (
                         <>
                             <h2 className="card-title mb-2">Volunteer Dashboard</h2>
                             <ul className="menu menu-vertical">
@@ -169,7 +170,7 @@ export default async function  DashboardPage() {
                             </div>
                         </>
                     )}
-                    {user && user.role === "admin" && (
+                    {user && effectiveRole === "admin" && (
                         <>
                             <h2 className="card-title mb-2">Admin Dashboard</h2>
                             <ul className="menu menu-vertical">

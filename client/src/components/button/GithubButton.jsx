@@ -1,12 +1,10 @@
 "use client"
 import { FaGithub } from "react-icons/fa";
-import { signIn } from "@/app/api/auth/[...nextauth]/route";
-import { doSocialLogin } from "@/actions/social";
+import { signIn } from "next-auth/react";
 
 export default function GithubButton() {
     const handleClick = async () => {
-        
-        await doSocialLogin("github");
+        await signIn("github", { callbackUrl: "/dashboard" });
     };
 
     return (

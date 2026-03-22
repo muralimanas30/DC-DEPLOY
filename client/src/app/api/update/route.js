@@ -17,9 +17,9 @@ export async function POST(request) {
         return NextResponse.json(
             {
                 status: "error",
-                msg: error?.response?.data?.msg || "Registration failed",
+                msg: error?.response?.data?.msg || "Request failed",
             },
-            { status: 400 }
+            { status: error?.response?.data?.statusCode || 500 }
         );
     }
 }

@@ -7,17 +7,25 @@ function unwrapPayload(responseData) {
     return responseData?.data ?? responseData;
 }
 
-async function getUser(credentials) {
-    const response = await axios.post(
-        `${process.env.BACKEND_URL}/api/auth/login`,
-        {
-            email: credentials.email,
-            password: credentials.password,
-        },
-        { validateStatus: () => true }
-    );
+function getBackendBaseUrl() {
+    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+}
 
-    return response.data; // { status, msg, user, token }
+async function getUser(credentials) {
+    try {
+        const response = await axios.post(
+            `${getBackendBaseUrl()}/api/auth/login`,
+            {
+                email: credentials.email,
+                password: credentials.password,
+            },
+            { validateStatus: () => true }
+        );
+
+        return response.data;
+    } catch {
+        throw new Error("Backend service unavailable");
+    }
 }
 
 export const authOptions = {
@@ -48,7 +56,7 @@ export const authOptions = {
 
                 if (data.status == "error") {
                     // 🔑 THIS is what allows client-side error handling
-                    throw new Error(data.msg || "Invalid email or password");
+                    throw new Error(data.msg || "Request failed");
                 }
                 return {
                     ...payload.user,
@@ -61,53 +69,82 @@ export const authOptions = {
     session: {
         strategy: "jwt",
     },
+    pages: {
+        signIn: "/login",
+        error: "/login",
+    },
     callbacks: {
         async signIn({ user, account }) {
-            // Only handle OAuth here
-            // console.log(user);
-            // console.log(account);
-            
-            const res = await axios.post(
-                `${process.env.BACKEND_URL}/api/auth/oauth`,
-                {
-                    email: user.email,
-                    name: user.name,
-                    image: user.image,
-                    provider: account.provider, // "google"
-                },
-                { validateStatus: () => true }
-            );
-
-            const data = res.data;
-            const payload = unwrapPayload(data);
-
-            if (data.status !== "success") {
-                throw new Error(data.msg || "OAuth login failed");
+            if (!account?.provider || account.provider === "credentials") {
+                return true;
             }
 
-            // Attach backend info to NextAuth user
-            user = payload.user;
-            user.token = payload.token;
-            user.id = payload.user?.id || payload.user?._id;
-            console.log(
-                user
-            );
-            return true;
+            try {
+                const res = await axios.post(
+                    `${getBackendBaseUrl()}/api/auth/oauth`,
+                    {
+                        email: user.email,
+                        name: user.name,
+                        image: user.image,
+                        provider: account.provider,
+                    },
+                    { validateStatus: () => true }
+                );
+
+                const data = res.data;
+                const payload = unwrapPayload(data);
+
+                if (data.status !== "success") {
+                    const msg = encodeURIComponent(data.msg || "OAuth login failed");
+                    return `/login?authError=${msg}`;
+                }
+
+                const backendUser = payload?.user || {};
+
+                // Persist backend identity on the auth user object so jwt/session callbacks can carry it.
+                user.id = (backendUser?.id || backendUser?._id || user?.id || "").toString();
+                user.token = payload?.token;
+                user.roles = backendUser?.roles || user?.roles;
+                user.activeRole = backendUser?.activeRole || user?.activeRole;
+                user.role = backendUser?.activeRole || backendUser?.role || user?.role;
+                user.assignedIncident = backendUser?.assignedIncident || user?.assignedIncident || null;
+                user.name = backendUser?.name || user?.name;
+                user.email = backendUser?.email || user?.email;
+                user.image = backendUser?.image || user?.image;
+
+                return true;
+            } catch {
+                return "/login?authError=Backend%20service%20unavailable";
+            }
         },
 
-        // async jwt({ token, user }) {
-        //     if (user) {
-        //         token.id = user.id;
-        //         token.backendToken = user.backendToken;
-        //     }
-        //     return token;
-        // },
+        async jwt({ token, user }) {
+            if (user) {
+                token.id = user.id || user._id || token.id;
+                token.token = user.token || token.token;
+                token.roles = user.roles || token.roles;
+                token.activeRole = user.activeRole || user.role || token.activeRole;
+                token.role = token.activeRole || token.role;
+                token.name = user.name || token.name;
+                token.email = user.email || token.email;
+                token.image = user.image || token.image;
+                token.assignedIncident = user.assignedIncident || token.assignedIncident || null;
+            }
+            return token;
+        },
 
-        // async session({ session, token }) {
-        //     session.user.id = token.id;
-        //     session.backendToken = token.backendToken;
-        //     return session;
-        // },
+        async session({ session, token }) {
+            session.user = {
+                ...session.user,
+                id: token.id,
+                token: token.token,
+                roles: token.roles,
+                activeRole: token.activeRole,
+                role: token.activeRole || token.role,
+                assignedIncident: token.assignedIncident,
+            };
+            return session;
+        },
     }
 
 

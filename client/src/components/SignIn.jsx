@@ -1,13 +1,15 @@
 "use client";
 import axios from "axios";
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import SubmitButton from "./SubmitButton";
 import AuthButtons from "./button/AuthButtons";
 
 export default function AuthForm({ mode = "login" }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [form, setForm] = useState({
@@ -15,6 +17,20 @@ export default function AuthForm({ mode = "login" }) {
         email: "",
         password: "",
     });
+
+    useEffect(() => {
+        const authError = searchParams.get("authError");
+        const nextAuthError = searchParams.get("error");
+
+        if (authError) {
+            setError(authError);
+            return;
+        }
+
+        if (nextAuthError === "AccessDenied") {
+            setError("Unable to complete sign-in. Please verify backend service is running.");
+        }
+    }, [searchParams]);
 
     const handleChange = (e) =>
         setForm({ ...form, [e.target.name]: e.target.value });
@@ -52,7 +68,7 @@ export default function AuthForm({ mode = "login" }) {
 
                 if (response.data.status != "success") {
                     console.warn("❌ Register failed:", response.data?.msg);
-                    setError(response.data?.msg || "Register failed");
+                    setError(response.data?.msg || "Request failed");
                     return;
                 }
 
@@ -87,11 +103,7 @@ export default function AuthForm({ mode = "login" }) {
 
                 if (signInRes?.error) {
                     console.error("❌ Login failed:", signInRes.error);
-                    setError(
-                        signInRes.error === "Configuration"
-                            ? "Invalid email or password"
-                            : signInRes.error
-                    );
+                    setError(signInRes.error);
                     return;
                 }
 
@@ -105,7 +117,7 @@ export default function AuthForm({ mode = "login" }) {
         } catch (err) {
             console.error("🔥 Caught exception:", err);
             console.error("🔥 Axios error data:", err?.response?.data);
-            setError(err?.response?.data?.msg || "Something went wrong");
+            setError(err?.response?.data?.msg || "Request failed");
         } finally {
             console.log("🟢 Auth flow finished");
             setLoading(false);

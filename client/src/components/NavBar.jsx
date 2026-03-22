@@ -52,6 +52,7 @@ export default function Navbar() {
             <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-2 gap-2">
                 {/* Left: User info, theme, login/logout */}
                 <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                
                     <button
                         className="btn btn-ghost btn-sm"
                         aria-label="Toggle dark/light mode"
