@@ -35,20 +35,28 @@ export default function AuthForm({ mode = "login" }) {
     const handleChange = (e) =>
         setForm({ ...form, [e.target.name]: e.target.value });
 
+    const normalizeAuthError = (rawError) => {
+        if (!rawError) return "Login failed";
+
+        const value = String(rawError);
+        if (value === "CredentialsSignin" || value === "Configuration") {
+            return "Invalid email or password";
+        }
+
+        if (value === "AccessDenied") {
+            return "Unable to complete sign-in. Please verify backend service is running.";
+        }
+
+        return value;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError("");
 
         try {
-            console.log("🟡 Auth flow started");
-            setLoading(true);
-
             if (mode === "register") {
-                console.log("🟡 Mode: REGISTER");
-
-                // 1️⃣ Register
-                console.log("➡️ Sending register request");
                 const response = await axios.post(
                     "/api/register",
                     {
@@ -61,65 +69,38 @@ export default function AuthForm({ mode = "login" }) {
                     }
                 );
 
-                console.log("⬅️ Register response:", {
-                    status: response.status,
-                    data: response.data,
-                });
-
                 if (response.data.status != "success") {
-                    console.warn("❌ Register failed:", response.data?.msg);
                     setError(response.data?.msg || "Request failed");
                     return;
                 }
 
-                // 2️⃣ Auto login
-                console.log("➡️ Attempting auto-login");
-
                 const signInRes = await signIn("credentials", {
                     email: form.email,
                     password: form.password,
                     redirect: false,
                 });
 
-                console.log("⬅️ signIn result:", signInRes);
-
                 if (signInRes?.error) {
-                    console.error("❌ Auto-login failed:", signInRes.error);
-                    setError(signInRes.error);
+                    setError(normalizeAuthError(signInRes.error));
                     return;
                 }
-
-                console.log("✅ Auto-login success");
             } else {
-                console.log("🟡 Mode: LOGIN");
-
                 const signInRes = await signIn("credentials", {
                     email: form.email,
                     password: form.password,
                     redirect: false,
                 });
 
-                console.log("⬅️ signIn result:", signInRes);
-
                 if (signInRes?.error) {
-                    console.error("❌ Login failed:", signInRes.error);
-                    setError(signInRes.error);
+                    setError(normalizeAuthError(signInRes.error));
                     return;
                 }
-
-                console.log("✅ Login success");
             }
 
-            // 3️⃣ Redirect
-            console.log("➡️ Redirecting to /");
             router.push("/");
-            console.log("✅ router.push called");
         } catch (err) {
-            console.error("🔥 Caught exception:", err);
-            console.error("🔥 Axios error data:", err?.response?.data);
             setError(err?.response?.data?.msg || "Request failed");
         } finally {
-            console.log("🟢 Auth flow finished");
             setLoading(false);
         }
 

@@ -31,7 +31,7 @@ const createIncident = async (req, res, next) => {
                 creator.assignedIncident = null;
                 await creator.save();
             } else {
-                const activeStatuses = ["active", "open", "pending-victim-consensus"];
+                const activeStatuses = ["active"];
                 if (activeStatuses.includes(assignedIncident.status)) {
                     throw new AppError(
                         "You already have an active incident. Resolve it before creating another.",

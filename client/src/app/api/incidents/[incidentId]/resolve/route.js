@@ -5,7 +5,7 @@ function getBackendBaseUrl() {
     return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 }
 
-export async function PATCH(_request, { params }) {
+export async function PATCH(request, { params }) {
     const session = await auth();
     const token = session?.user?.token;
 
@@ -35,7 +35,9 @@ export async function PATCH(_request, { params }) {
     }
 
     try {
-        const response = await fetch(`${getBackendBaseUrl()}/api/incidents/${incidentId}/resolve`, {
+        const forceQuery = request?.nextUrl?.searchParams?.get("force") === "true" ? "?force=true" : "";
+
+        const response = await fetch(`${getBackendBaseUrl()}/api/incidents/${incidentId}/resolve${forceQuery}`, {
             method: "PATCH",
             headers: {
                 Authorization: `Bearer ${token}`,

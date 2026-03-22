@@ -6,6 +6,8 @@ const { incidentController } = require("../controllers/incidentController");
 router.post("/", authMiddleware, incidentController.createIncident);
 router.get("/", authMiddleware, incidentController.listIncidents);
 router.get("/:incidentId", authMiddleware, incidentController.getIncidentById);
+router.get("/:incidentId/participants", authMiddleware, incidentController.getIncidentParticipants);
+router.get("/:incidentId/available-volunteers", authMiddleware, incidentController.getAvailableVolunteers);
 router.post("/:incidentId/join", authMiddleware, incidentController.joinIncident);
 router.post("/:incidentId/leave", authMiddleware, incidentController.leaveIncident);
 router.post("/:incidentId/assign", authMiddleware, incidentController.assignUser);

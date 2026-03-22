@@ -3,9 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import useIncident from "@/hooks/useIncident";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 const severities = ["low", "medium", "high", "critical"];
-const activeStatuses = ["active", "open", "pending-victim-consensus"];
+const activeStatuses = ["active"];
+
+function extractIncidentId(value) {
+    if (!value) return null;
+    if (typeof value === "string") return value;
+    if (typeof value === "object") {
+        return value._id || value.id || value.incidentId || null;
+    }
+    return null;
+}
 
 function getIncidentCounts(incident) {
     const victims = Array.isArray(incident?.victims) ? incident.victims.length : 0;
@@ -20,20 +30,22 @@ function getIncidentCounts(incident) {
 }
 
 export default function IncidentsPage() {
+    const router = useRouter();
     const {
         incidents,
-        selectedIncident,
         meta,
         loading,
         creating,
         error,
         clearError,
         listIncidents,
-        getIncidentById,
         createIncident,
-        resolveIncident,
+        joinIncident,
     } = useIncident();
     const { data: session } = useSession();
+    const currentRole = session?.user?.activeRole || session?.user?.role || "victim";
+    const myUserId = session?.user?.id || null;
+    const enforceAssignedLock = currentRole !== "admin";
 
     const [page, setPage] = useState(1);
     const [severity, setSeverity] = useState("");
@@ -48,6 +60,8 @@ export default function IncidentsPage() {
     const [hasActiveIncident, setHasActiveIncident] = useState(false);
     const [activeIncidentId, setActiveIncidentId] = useState(null);
     const [assignedIncidentSnapshot, setAssignedIncidentSnapshot] = useState(null);
+    const [infoMessage, setInfoMessage] = useState("");
+    const assignedIncidentId = extractIncidentId(session?.user?.assignedIncident) || activeIncidentId;
 
     useEffect(() => {
         let ignore = false;
@@ -69,22 +83,17 @@ export default function IncidentsPage() {
 
                 if (!ignore) {
                     setHasActiveIncident(Boolean(activeIncident));
-                    const incidentId = activeIncident?._id || activeIncident?.id || null;
+                    const incidentId = extractIncidentId(activeIncident);
                     setActiveIncidentId(incidentId);
                     setAssignedIncidentSnapshot(activeIncident || null);
-                    if (incidentId) {
-                        await getIncidentById(incidentId);
-                    }
                 }
             } catch {
                 if (!ignore) {
                     const sessionAssignedIncident = session?.user?.assignedIncident;
-                    setHasActiveIncident(Boolean(sessionAssignedIncident));
-                    setActiveIncidentId(sessionAssignedIncident || null);
+                    const incidentId = extractIncidentId(sessionAssignedIncident);
+                    setHasActiveIncident(Boolean(incidentId));
+                    setActiveIncidentId(incidentId);
                     setAssignedIncidentSnapshot(null);
-                    if (sessionAssignedIncident) {
-                        await getIncidentById(sessionAssignedIncident);
-                    }
                 }
             } finally {
                 if (!ignore) setCheckingActiveIncident(false);
@@ -99,9 +108,9 @@ export default function IncidentsPage() {
     }, [session?.user?.assignedIncident]);
 
     useEffect(() => {
-        if (hasActiveIncident) return;
+        if (enforceAssignedLock && hasActiveIncident) return;
         listIncidents({ page, limit: 10, severity, status });
-    }, [hasActiveIncident, listIncidents, page, severity, status]);
+    }, [enforceAssignedLock, hasActiveIncident, listIncidents, page, severity, status]);
 
     const canGoPrev = useMemo(() => page > 1, [page]);
     const canGoNext = useMemo(() => page < (meta?.totalPages || 1), [page, meta?.totalPages]);
@@ -114,11 +123,9 @@ export default function IncidentsPage() {
         if (!created) return;
 
         const createdId = created?._id || created?.id || null;
-        setHasActiveIncident(true);
-        setActiveIncidentId(createdId);
-        setAssignedIncidentSnapshot(created || null);
         if (createdId) {
-            await getIncidentById(createdId);
+            router.push(`/incidents/${createdId}`);
+            return;
         }
 
         setForm({
@@ -132,22 +139,25 @@ export default function IncidentsPage() {
         setPage(1);
     };
 
-    const onResolve = async () => {
-        if (!activeIncidentId) return;
+    const onJoin = async (incidentId) => {
         clearError();
+        setInfoMessage("");
+        const joined = await joinIncident(incidentId);
+        if (!joined) return;
 
-        const resolved = await resolveIncident(activeIncidentId);
-        if (!resolved) return;
+        if (joined?.autoClosedBecauseNoVictims === true) {
+            setInfoMessage("Incident auto-closed because no victims remained assigned.");
+        }
 
-        setHasActiveIncident(false);
-        setActiveIncidentId(null);
-        setAssignedIncidentSnapshot(null);
+        const joinedId = joined?._id || joined?.id || incidentId;
+        if (joinedId) {
+            router.push(`/incidents/${joinedId}`);
+            return;
+        }
+
         await listIncidents({ page: 1, limit: 10, severity, status });
         setPage(1);
     };
-
-    const detailId = selectedIncident?._id || selectedIncident?.id;
-    const { victims, volunteers, participants } = getIncidentCounts(selectedIncident);
 
     return (
         <div className="container mx-auto px-4 py-8 space-y-6">
@@ -155,12 +165,22 @@ export default function IncidentsPage() {
                 <div className="card-body">
                     <h1 className="card-title text-3xl">Incidents</h1>
                     <p className="text-base-content/70">
-                        {hasActiveIncident
+                        {enforceAssignedLock && hasActiveIncident
                             ? "You are assigned to an active incident. Only your current incident is visible."
-                            : "Create a new incident and browse existing reports. This page is wired to backend M1 endpoints."}
+                            : "Create/join incidents and manage participation based on your role."}
                     </p>
                 </div>
             </section>
+
+            {infoMessage && (
+                <section className="card bg-base-100 border border-base-300 shadow-md">
+                    <div className="card-body py-3">
+                        <div className="alert alert-info">
+                            <span>{infoMessage}</span>
+                        </div>
+                    </div>
+                </section>
+            )}
 
             {checkingActiveIncident && (
                 <section className="card bg-base-100 shadow-lg border border-base-300">
@@ -170,7 +190,7 @@ export default function IncidentsPage() {
                 </section>
             )}
 
-            {!checkingActiveIncident && hasActiveIncident && (
+            {!checkingActiveIncident && enforceAssignedLock && hasActiveIncident && (
                 <section className="card bg-base-100 shadow-lg border border-base-300">
                     <div className="card-body">
                         {error && (
@@ -179,11 +199,11 @@ export default function IncidentsPage() {
                             </div>
                         )}
 
-                        {(selectedIncident || assignedIncidentSnapshot) ? (
+                        {assignedIncidentSnapshot ? (
                             <>
                                 {(() => {
-                                    const currentIncident = selectedIncident || assignedIncidentSnapshot;
-                                    const currentId = currentIncident?._id || currentIncident?.id;
+                                    const currentIncident = assignedIncidentSnapshot;
+                                    const currentId = extractIncidentId(currentIncident);
                                     const {
                                         victims: currentVictims,
                                         volunteers: currentVolunteers,
@@ -208,11 +228,10 @@ export default function IncidentsPage() {
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     <button
                                         type="button"
-                                        className="btn btn-success"
-                                        onClick={onResolve}
-                                        disabled={loading}
+                                        className="btn btn-primary"
+                                        onClick={() => currentId && router.push(`/incidents/${currentId}`)}
                                     >
-                                        {loading ? "Closing..." : "Mark Closed"}
+                                        Open Incident Workspace
                                     </button>
                                 </div>
                                         </>
@@ -221,14 +240,14 @@ export default function IncidentsPage() {
                             </>
                         ) : (
                             <div className="alert alert-info">
-                                <span>Loading your assigned incident...</span>
+                                <span>Open your assigned incident from the dedicated workspace view.</span>
                             </div>
                         )}
                     </div>
                 </section>
             )}
 
-            {!checkingActiveIncident && !hasActiveIncident && (
+            {!checkingActiveIncident && (!enforceAssignedLock || !hasActiveIncident) && (
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <article className="card bg-base-100 shadow-lg border border-base-300">
                     <div className="card-body">
@@ -240,7 +259,11 @@ export default function IncidentsPage() {
                             </div>
                         )}
 
-                        {checkingActiveIncident ? (
+                        {currentRole !== "victim" ? (
+                            <div className="alert alert-info">
+                                <span>Incident creation is limited to victim role. Use join/assign for participation.</span>
+                            </div>
+                        ) : checkingActiveIncident ? (
                             <div className="py-2">
                                 <span className="loading loading-spinner loading-md"></span>
                             </div>
@@ -253,7 +276,7 @@ export default function IncidentsPage() {
                                         <button
                                             type="button"
                                             className="btn btn-sm btn-outline mt-3"
-                                            onClick={() => getIncidentById(activeIncidentId)}
+                                            onClick={() => router.push(`/incidents/${activeIncidentId}`)}
                                         >
                                             View Active Incident
                                         </button>
@@ -358,12 +381,17 @@ export default function IncidentsPage() {
                                 {incidents.map((incident, index) => {
                                     const incidentId = incident?._id || incident?.id;
                                     const { victims, volunteers, participants } = getIncidentCounts(incident);
+                                    const isCurrentlyAssignedIncident = Boolean(
+                                        assignedIncidentId && incidentId && assignedIncidentId === incidentId
+                                    );
+                                    const joinBlockedByExistingAssignment = Boolean(
+                                        assignedIncidentId && incidentId && assignedIncidentId !== incidentId
+                                    );
 
                                     return (
-                                    <button
+                                    <div
                                         key={incidentId || `${incident?.title || "incident"}-${index}`}
                                         className="w-full text-left rounded-xl border border-base-300 p-3 hover:bg-base-200 transition"
-                                        onClick={() => incidentId && getIncidentById(incidentId)}
                                     >
                                         <div className="flex justify-between items-start gap-2">
                                             <h3 className="font-semibold">{incident.title}</h3>
@@ -376,7 +404,32 @@ export default function IncidentsPage() {
                                             <span className="badge badge-secondary badge-sm">Volunteers: {volunteers}</span>
                                             <span className="badge badge-accent badge-sm">Participants: {participants}</span>
                                         </div>
-                                    </button>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline"
+                                                onClick={() => incidentId && router.push(`/incidents/${incidentId}`)}
+                                            >
+                                                View
+                                            </button>
+                                            {(currentRole === "victim" || currentRole === "volunteer" || currentRole === "admin") && incident.status === "active" && incidentId && !isCurrentlyAssignedIncident && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-primary"
+                                                    onClick={() => onJoin(incidentId)}
+                                                    disabled={loading || joinBlockedByExistingAssignment}
+                                                >
+                                                    {joinBlockedByExistingAssignment ? "Assigned Elsewhere" : "Join"}
+                                                </button>
+                                            )}
+
+                                            {incident.status === "active" && isCurrentlyAssignedIncident && (
+                                                <div className="badge badge-success badge-outline">
+                                                    Currently assigned to this incident
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 )})}
                             </div>
                         )}
@@ -405,24 +458,6 @@ export default function IncidentsPage() {
             </section>
             )}
 
-            {!hasActiveIncident && selectedIncident && (
-                <section className="card bg-base-100 shadow-lg border border-base-300">
-                    <div className="card-body">
-                        <h2 className="card-title">Selected Incident</h2>
-                        <p className="text-sm text-base-content/70">ID: {detailId}</p>
-                        <h3 className="text-xl font-semibold">{selectedIncident.title}</h3>
-                        <p>{selectedIncident.description}</p>
-                        <div className="flex gap-2 flex-wrap">
-                            <span className="badge badge-info">status: {selectedIncident.status}</span>
-                            <span className="badge badge-warning">severity: {selectedIncident.severity}</span>
-                            <span className="badge badge-outline">category: {selectedIncident.category}</span>
-                            <span className="badge badge-primary">victims: {victims}</span>
-                            <span className="badge badge-secondary">volunteers: {volunteers}</span>
-                            <span className="badge badge-accent">participants: {participants}</span>
-                        </div>
-                    </div>
-                </section>
-            )}
         </div>
     );
 }

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "../auth/[...nextauth]/route";
+import { auth } from "../../../auth/[...nextauth]/route";
 
-function getBackendUrl(pathname = "") {
-    const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-    return `${baseUrl}${pathname}`;
+function getBackendBaseUrl() {
+    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 }
 
-async function forwardUpdate(request, method = "PATCH") {
+export async function POST(_request, { params }) {
     const session = await auth();
     const token = session?.user?.token;
 
@@ -22,16 +21,25 @@ async function forwardUpdate(request, method = "PATCH") {
         );
     }
 
-    const body = await request.json();
+    const { incidentId } = await params;
+    if (!incidentId) {
+        return NextResponse.json(
+            {
+                status: "error",
+                statusCode: 400,
+                msg: "Invalid incident id",
+                code: "INVALID_INCIDENT_ID",
+            },
+            { status: 400 }
+        );
+    }
 
     try {
-        const response = await fetch(getBackendUrl("/api/user/update"), {
-            method,
+        const response = await fetch(`${getBackendBaseUrl()}/api/incidents/${incidentId}/join`, {
+            method: "POST",
             headers: {
-                "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify(body),
             cache: "no-store",
         });
 
@@ -42,17 +50,9 @@ async function forwardUpdate(request, method = "PATCH") {
             {
                 status: "error",
                 statusCode: 500,
-                msg: "Request failed",
+                msg: "Failed to join incident",
             },
             { status: 500 }
         );
     }
-}
-
-export async function PATCH(request) {
-    return forwardUpdate(request, "PATCH");
-}
-
-export async function POST(request) {
-    return forwardUpdate(request, "PATCH");
 }

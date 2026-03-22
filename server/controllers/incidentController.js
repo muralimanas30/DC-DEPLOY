@@ -7,6 +7,8 @@ const {
     leaveIncident,
     assignUser,
     unassignUser,
+    getIncidentParticipants,
+    getAvailableVolunteers,
 } = require("../services/incident");
 
 const incidentController = {
@@ -18,6 +20,8 @@ const incidentController = {
     leaveIncident,
     assignUser,
     unassignUser,
+    getIncidentParticipants,
+    getAvailableVolunteers,
 };
 
 module.exports = { incidentController };

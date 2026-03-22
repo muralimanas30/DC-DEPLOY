@@ -9,6 +9,15 @@ const initialMeta = {
 	totalPages: 1,
 };
 
+function normalizeIncidentId(value) {
+	if (!value) return null;
+	if (typeof value === "string") return value;
+	if (typeof value === "object") {
+		return value._id || value.id || value.incidentId || null;
+	}
+	return null;
+}
+
 export default function useIncident() {
 	const [incidents, setIncidents] = useState([]);
 	const [selectedIncident, setSelectedIncident] = useState(null);
@@ -109,13 +118,14 @@ export default function useIncident() {
 	}, []);
 
 	const resolveIncident = useCallback(async (incidentId) => {
-		if (!incidentId) return null;
+		const normalizedIncidentId = normalizeIncidentId(incidentId);
+		if (!normalizedIncidentId) return null;
 
 		setLoading(true);
 		setError("");
 
 		try {
-			const res = await fetch(`/api/incidents/${incidentId}/resolve`, {
+			const res = await fetch(`/api/incidents/${normalizedIncidentId}/resolve`, {
 				method: "PATCH",
 			});
 
@@ -137,6 +147,79 @@ export default function useIncident() {
 		}
 	}, []);
 
+	const requestIncidentMutation = useCallback(async (url, options, fallbackMessage) => {
+		setLoading(true);
+		setError("");
+
+		try {
+			const res = await fetch(url, options);
+			const payload = await res.json();
+
+			if (!res.ok || payload?.status !== "success") {
+				throw new Error(payload?.msg || fallbackMessage);
+			}
+
+			const incident = payload?.data?.incident || null;
+			if (incident) {
+				setSelectedIncident(incident);
+			}
+
+			return incident;
+		} catch (err) {
+			const message = err?.message || fallbackMessage;
+			setError(message);
+			return null;
+		} finally {
+			setLoading(false);
+		}
+	}, []);
+
+	const joinIncident = useCallback(async (incidentId) => {
+		if (!incidentId) return null;
+
+		return requestIncidentMutation(
+			`/api/incidents/${incidentId}/join`,
+			{ method: "POST" },
+			"Failed to join incident"
+		);
+	}, [requestIncidentMutation]);
+
+	const leaveIncident = useCallback(async (incidentId) => {
+		if (!incidentId) return null;
+
+		return requestIncidentMutation(
+			`/api/incidents/${incidentId}/leave`,
+			{ method: "POST" },
+			"Failed to leave incident"
+		);
+	}, [requestIncidentMutation]);
+
+	const assignUser = useCallback(async (incidentId, userId) => {
+		if (!incidentId || !userId) return null;
+
+		return requestIncidentMutation(
+			`/api/incidents/${incidentId}/assign`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ userId }),
+			},
+			"Failed to assign user"
+		);
+	}, [requestIncidentMutation]);
+
+	const unassignUser = useCallback(async (incidentId, userId) => {
+		if (!incidentId || !userId) return null;
+
+		return requestIncidentMutation(
+			`/api/incidents/${incidentId}/assign/${userId}`,
+			{ method: "DELETE" },
+			"Failed to unassign user"
+		);
+	}, [requestIncidentMutation]);
+
 	return {
 		incidents,
 		selectedIncident,
@@ -149,5 +232,9 @@ export default function useIncident() {
 		getIncidentById,
 		createIncident,
 		resolveIncident,
+		joinIncident,
+		leaveIncident,
+		assignUser,
+		unassignUser,
 	};
 }

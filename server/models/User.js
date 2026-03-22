@@ -40,6 +40,11 @@ const userSchema = new mongoose.Schema({
 
     phone: String,
 
+    skills: {
+        type: [String],
+        default: [],
+    },
+
     currentLocation: {
         type: {
             type: String,

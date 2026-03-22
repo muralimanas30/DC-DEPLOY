@@ -37,8 +37,11 @@ const getIncidentById = async (req, res, next) => {
         const isVolunteer = (incident.volunteers || []).some((id) => id.toString() === currentUserId);
         const isAdminParticipant = (incident.admins || []).some((id) => id.toString() === currentUserId);
         const isPlatformAdmin = currentUser.activeRole === "admin";
+        const canViewClosed = isCreator || isVictim || isVolunteer || isAdminParticipant || isPlatformAdmin;
+        const normalizedStatus = String(incident.status || "").trim().toLowerCase();
+        const isClosed = normalizedStatus === "closed";
 
-        if (!isCreator && !isVictim && !isVolunteer && !isAdminParticipant && !isPlatformAdmin) {
+        if (isClosed && !canViewClosed) {
             throw new AppError("You are not allowed to view this incident", StatusCodes.FORBIDDEN, "INCIDENT_VIEW_FORBIDDEN");
         }
 

@@ -12,6 +12,7 @@ const resolveIncident = async (req, res, next) => {
     try {
         const { incidentId } = req.params;
         const rawUserId = req.user?.id || req.user?._id || req.userId;
+        const forceCloseRequested = String(req.query?.force || "").toLowerCase() === "true";
 
         if (!mongoose.Types.ObjectId.isValid(incidentId)) {
             throw new AppError("Invalid incident id", StatusCodes.BAD_REQUEST, "INVALID_INCIDENT_ID");
@@ -42,12 +43,16 @@ const resolveIncident = async (req, res, next) => {
         const isAssignedAdmin = incident.admins?.some((id) => id.toString() === currentUserId);
         const isPlatformAdmin = currentUser?.activeRole === "admin";
 
-        if (!isCreator && !isAssignedVictim && !isAssignedVolunteer && !isAssignedAdmin && !isPlatformAdmin) {
+        if (forceCloseRequested && !isPlatformAdmin) {
+            throw new AppError("Only admins can force close incidents", StatusCodes.FORBIDDEN, "INCIDENT_FORCE_CLOSE_FORBIDDEN");
+        }
+
+        if (!forceCloseRequested && !isCreator && !isAssignedVictim && !isAssignedVolunteer && !isAssignedAdmin) {
             throw new AppError("You are not allowed to resolve this incident", StatusCodes.FORBIDDEN, "INCIDENT_RESOLVE_FORBIDDEN");
         }
 
-        // Platform admin can force-close at any time.
-        if (isPlatformAdmin) {
+        // Platform admin can force-close when explicitly requested.
+        if (isPlatformAdmin && forceCloseRequested) {
             const participantIds = [
                 ...(incident.victims || []),
                 ...(incident.volunteers || []),
@@ -72,6 +77,7 @@ const resolveIncident = async (req, res, next) => {
                 msg: "Incident closed by admin",
                 data: {
                     incident,
+                    autoClosedBecauseNoVictims: false,
                 },
             });
         }
@@ -102,8 +108,40 @@ const resolveIncident = async (req, res, next) => {
         updatedIncident.volunteers = nextVolunteers;
         updatedIncident.admins = nextAdmins;
 
-        const activeParticipants = nextVictims.length + nextVolunteers.length + nextAdmins.length;
-        updatedIncident.status = activeParticipants > 0 ? "active" : "closed";
+        const shouldCloseIncident = nextVictims.length === 0;
+
+        if (shouldCloseIncident) {
+            const participantIdsToClear = [...new Set([
+                ...nextVictims,
+                ...nextVolunteers,
+                ...nextAdmins,
+                currentUserId,
+            ])].filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+            updatedIncident.victims = [];
+            updatedIncident.volunteers = [];
+            updatedIncident.admins = [];
+            updatedIncident.status = "closed";
+            await updatedIncident.save();
+
+            if (participantIdsToClear.length) {
+                await User.updateMany(
+                    { _id: { $in: participantIdsToClear } },
+                    { $set: { assignedIncident: null } }
+                );
+            }
+
+            return sendSuccess(res, {
+                statusCode: StatusCodes.OK,
+                msg: "Incident closed successfully",
+                data: {
+                    incident: updatedIncident,
+                    autoClosedBecauseNoVictims: true,
+                },
+            });
+        }
+
+        updatedIncident.status = "active";
         await updatedIncident.save();
 
         // Step 2: current user's assignment should be cleared when they resolve themselves out.
@@ -114,6 +152,7 @@ const resolveIncident = async (req, res, next) => {
             msg: updatedIncident.status === "closed" ? "Incident closed successfully" : "Your participation was resolved",
             data: {
                 incident: updatedIncident,
+                autoClosedBecauseNoVictims: false,
             },
         });
     } catch (err) {

@@ -49,15 +49,43 @@ const normalizeParticipantState = async (incident) => {
     const volunteers = (incident.volunteers || []).map((id) => id.toString());
     const admins = (incident.admins || []).map((id) => id.toString());
 
-    incident.victims = [...new Set(victims)];
-    incident.volunteers = [...new Set(volunteers)];
-    incident.admins = [...new Set(admins)];
+    const uniqueVictims = [...new Set(victims)];
+    const uniqueVolunteers = [...new Set(volunteers)];
+    const uniqueAdmins = [...new Set(admins)];
 
-    const activeParticipants = incident.victims.length + incident.volunteers.length + incident.admins.length;
-    incident.status = activeParticipants > 0 ? "active" : "closed";
+    if (uniqueVictims.length === 0) {
+        const participantIds = [...new Set([...uniqueVictims, ...uniqueVolunteers, ...uniqueAdmins])]
+            .filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+        incident.victims = [];
+        incident.volunteers = [];
+        incident.admins = [];
+        incident.status = "closed";
+        await incident.save();
+
+        if (participantIds.length) {
+            await User.updateMany(
+                { _id: { $in: participantIds } },
+                { $set: { assignedIncident: null } }
+            );
+        }
+
+        return {
+            incident,
+            autoClosedBecauseNoVictims: true,
+        };
+    }
+
+    incident.victims = uniqueVictims;
+    incident.volunteers = uniqueVolunteers;
+    incident.admins = uniqueAdmins;
+    incident.status = "active";
     await incident.save();
 
-    return incident;
+    return {
+        incident,
+        autoClosedBecauseNoVictims: false,
+    };
 };
 
 const joinIncident = async (req, res, next) => {
@@ -71,6 +99,16 @@ const joinIncident = async (req, res, next) => {
 
         const incident = await loadIncident(incidentId);
         const meId = me._id.toString();
+        const existingAssignedIncidentId = me?.assignedIncident ? me.assignedIncident.toString() : null;
+
+        if (existingAssignedIncidentId && existingAssignedIncidentId !== incident._id.toString()) {
+            throw new AppError(
+                "You are already assigned to another active incident. Resolve/leave it before joining a new one",
+                StatusCodes.CONFLICT,
+                "ALREADY_ASSIGNED_TO_OTHER_INCIDENT"
+            );
+        }
+
         const targetField = roleToField[me.activeRole] || "victims";
 
         incident.victims = (incident.victims || []).filter((id) => id.toString() !== meId);
@@ -78,14 +116,19 @@ const joinIncident = async (req, res, next) => {
         incident.admins = (incident.admins || []).filter((id) => id.toString() !== meId);
 
         incident[targetField].push(me._id);
-        await normalizeParticipantState(incident);
+        const { incident: normalizedIncident, autoClosedBecauseNoVictims } = await normalizeParticipantState(incident);
 
-        await User.updateOne({ _id: me._id }, { $set: { assignedIncident: incident._id } });
+        if (!autoClosedBecauseNoVictims) {
+            await User.updateOne({ _id: me._id }, { $set: { assignedIncident: incident._id } });
+        }
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "Joined incident successfully",
-            data: { incident },
+            data: {
+                incident: normalizedIncident,
+                autoClosedBecauseNoVictims,
+            },
         });
     } catch (err) {
         next(err);
@@ -108,7 +151,7 @@ const leaveIncident = async (req, res, next) => {
         incident.volunteers = (incident.volunteers || []).filter((id) => id.toString() !== meId);
         incident.admins = (incident.admins || []).filter((id) => id.toString() !== meId);
 
-        await normalizeParticipantState(incident);
+        const { incident: normalizedIncident, autoClosedBecauseNoVictims } = await normalizeParticipantState(incident);
 
         await User.updateOne(
             { _id: me._id, assignedIncident: incident._id },
@@ -118,7 +161,10 @@ const leaveIncident = async (req, res, next) => {
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "Left incident successfully",
-            data: { incident },
+            data: {
+                incident: normalizedIncident,
+                autoClosedBecauseNoVictims,
+            },
         });
     } catch (err) {
         next(err);
@@ -162,14 +208,19 @@ const assignUser = async (req, res, next) => {
         incident.admins = (incident.admins || []).filter((id) => id.toString() !== targetId);
 
         incident[targetField].push(targetUser._id);
-        await normalizeParticipantState(incident);
+        const { incident: normalizedIncident, autoClosedBecauseNoVictims } = await normalizeParticipantState(incident);
 
-        await User.updateOne({ _id: targetUser._id }, { $set: { assignedIncident: incident._id } });
+        if (!autoClosedBecauseNoVictims) {
+            await User.updateOne({ _id: targetUser._id }, { $set: { assignedIncident: incident._id } });
+        }
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "User assigned to incident successfully",
-            data: { incident },
+            data: {
+                incident: normalizedIncident,
+                autoClosedBecauseNoVictims,
+            },
         });
     } catch (err) {
         next(err);
@@ -201,7 +252,7 @@ const unassignUser = async (req, res, next) => {
         incident.volunteers = (incident.volunteers || []).filter((id) => id.toString() !== userId);
         incident.admins = (incident.admins || []).filter((id) => id.toString() !== userId);
 
-        await normalizeParticipantState(incident);
+        const { incident: normalizedIncident, autoClosedBecauseNoVictims } = await normalizeParticipantState(incident);
 
         await User.updateOne(
             { _id: userId, assignedIncident: incident._id },
@@ -211,7 +262,10 @@ const unassignUser = async (req, res, next) => {
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "User unassigned from incident successfully",
-            data: { incident },
+            data: {
+                incident: normalizedIncident,
+                autoClosedBecauseNoVictims,
+            },
         });
     } catch (err) {
         next(err);

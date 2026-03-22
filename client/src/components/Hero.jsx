@@ -4,7 +4,7 @@
  * Alternates between victim and volunteer boxes every 5 seconds with sliding/fading animation.
  * Hidden on mobile, visible on md+ screens.
  */
-import React, { useState, useEffect } from "react";
+import React from "react";
 
 const slides = [
     {
@@ -34,14 +34,7 @@ const slides = [
 ];
 
 export default function Hero({ line1, line2, line3, mode = "login" }) {
-    const [idx, setIdx] = useState(0);
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setIdx((prev) => (prev + 1) % slides.length);
-        }, 5000);
-        return () => clearInterval(interval);
-    }, []);
+    const idx = 0;
 
     return (
         <div className="hero bg-gradient-to-br from-primary/20 via-base-100 to-accent/10 rounded-2xl p-10 hidden md:flex flex-col items-start gap-8 shadow-2xl min-w-[340px] max-w-lg border-2 border-primary/30">

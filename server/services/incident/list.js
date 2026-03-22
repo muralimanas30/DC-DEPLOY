@@ -1,4 +1,5 @@
 const { StatusCodes } = require("http-status-codes");
+const { AppError } = require("../../errorHandler/errorHandler");
 const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
@@ -11,12 +12,10 @@ const listIncidents = async (req, res, next) => {
 
         const filter = {};
         if (req.query.status) {
-            if (req.query.status === "active") {
-                filter.status = { $in: ["active", "open", "pending-victim-consensus"] };
-            } else if (req.query.status === "closed") {
-                filter.status = { $in: ["closed", "resolved"] };
-            } else {
+            if (req.query.status === "active" || req.query.status === "closed") {
                 filter.status = req.query.status;
+            } else {
+                throw new AppError("Status filter must be active or closed", StatusCodes.BAD_REQUEST, "INVALID_STATUS_FILTER");
             }
         }
         if (req.query.severity) filter.severity = req.query.severity;

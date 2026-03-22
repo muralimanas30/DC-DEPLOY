@@ -39,7 +39,6 @@ const updateUser = async (req, res, next) => {
             "location",
             "currentLocation",
             "isOnline",
-            "assignedIncident",
             "lastSeen",
         ];
 
@@ -50,18 +49,49 @@ const updateUser = async (req, res, next) => {
             }
         }
 
+        if (req.body.skills !== undefined) {
+            if (!Array.isArray(req.body.skills)) {
+                throw new AppError("Skills must be an array", StatusCodes.BAD_REQUEST, "INVALID_SKILLS");
+            }
+
+            const normalizedSkills = [...new Set(
+                req.body.skills
+                    .map((item) => String(item || "").trim())
+                    .filter(Boolean)
+            )];
+
+            user.skills = normalizedSkills;
+            hasUpdates = true;
+        }
+
         /* ===========================
            Active role (special case)
            =========================== */
         if (req.body.activeRole !== undefined) {
-            if (!user.roles.includes(req.body.activeRole)) {
+            const requestedRole = String(req.body.activeRole || "").trim().toLowerCase();
+            const allowedRoles = ["victim", "volunteer", "admin"];
+
+            if (!allowedRoles.includes(requestedRole)) {
                 throw new AppError(
-                    "You do not have access to this role",
-                    StatusCodes.FORBIDDEN,
-                    "ROLE_ACCESS_DENIED"
+                    "Invalid role",
+                    StatusCodes.BAD_REQUEST,
+                    "INVALID_ROLE"
                 );
             }
-            user.activeRole = req.body.activeRole;
+
+            if (user.assignedIncident) {
+                throw new AppError(
+                    "You cannot change role while assigned to an active incident",
+                    StatusCodes.FORBIDDEN,
+                    "ROLE_SWITCH_BLOCKED_ASSIGNED_INCIDENT"
+                );
+            }
+
+            if (!user.roles.includes(requestedRole)) {
+                user.roles = [...new Set([...(user.roles || []), requestedRole])];
+            }
+
+            user.activeRole = requestedRole;
             hasUpdates = true;
         }
 

@@ -55,8 +55,7 @@ export const authOptions = {
                 const payload = unwrapPayload(data);
 
                 if (data.status == "error") {
-                    // 🔑 THIS is what allows client-side error handling
-                    throw new Error(data.msg || "Request failed");
+                    return null;
                 }
                 return {
                     ...payload.user,
@@ -108,6 +107,7 @@ export const authOptions = {
                 user.activeRole = backendUser?.activeRole || user?.activeRole;
                 user.role = backendUser?.activeRole || backendUser?.role || user?.role;
                 user.assignedIncident = backendUser?.assignedIncident || user?.assignedIncident || null;
+                user.skills = backendUser?.skills || user?.skills || [];
                 user.name = backendUser?.name || user?.name;
                 user.email = backendUser?.email || user?.email;
                 user.image = backendUser?.image || user?.image;
@@ -118,7 +118,7 @@ export const authOptions = {
             }
         },
 
-        async jwt({ token, user }) {
+        async jwt({ token, user, trigger, session }) {
             if (user) {
                 token.id = user.id || user._id || token.id;
                 token.token = user.token || token.token;
@@ -129,7 +129,28 @@ export const authOptions = {
                 token.email = user.email || token.email;
                 token.image = user.image || token.image;
                 token.assignedIncident = user.assignedIncident || token.assignedIncident || null;
+                token.skills = user.skills || token.skills || [];
             }
+
+            if (trigger === "update" && session) {
+                if (session.activeRole) {
+                    token.activeRole = session.activeRole;
+                    token.role = session.activeRole;
+                }
+
+                if (Array.isArray(session.roles)) {
+                    token.roles = session.roles;
+                }
+
+                if (session.assignedIncident !== undefined) {
+                    token.assignedIncident = session.assignedIncident;
+                }
+
+                if (Array.isArray(session.skills)) {
+                    token.skills = session.skills;
+                }
+            }
+
             return token;
         },
 
@@ -142,6 +163,7 @@ export const authOptions = {
                 activeRole: token.activeRole,
                 role: token.activeRole || token.role,
                 assignedIncident: token.assignedIncident,
+                skills: token.skills || [],
             };
             return session;
         },
