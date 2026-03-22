@@ -5,7 +5,26 @@ const { sendSuccess } = require("../../utils/response");
 
 const updateUser = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id).select("+password");
+        const candidateIds = [
+            req.userId,
+            req.user?.id,
+            req.user?._id,
+            req.params?.id,
+        ].filter(Boolean).map((id) => id.toString());
+
+        if (!candidateIds.length) {
+            throw new AppError("Unauthorized", StatusCodes.UNAUTHORIZED, "UNAUTHORIZED");
+        }
+
+        let user = null;
+        for (const id of [...new Set(candidateIds)]) {
+            // Skip malformed ObjectIds and keep trying other candidate sources.
+            if (!/^[a-f\d]{24}$/i.test(id)) {
+                continue;
+            }
+            user = await User.findById(id).select("+password");
+            if (user) break;
+        }
 
         if (!user) {
             throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
@@ -18,6 +37,7 @@ const updateUser = async (req, res, next) => {
            =========================== */
         const updatableFields = [
             "location",
+            "currentLocation",
             "isOnline",
             "assignedIncident",
             "lastSeen",

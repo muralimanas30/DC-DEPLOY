@@ -15,7 +15,6 @@ const register = async (req, res, next) => {
         if (exists) {
             throw new AppError("Email already registered", StatusCodes.CONFLICT, "EMAIL_ALREADY_REGISTERED");
         }
-        console.log("HELLO");
 
         const user = await User.create({
             email, password, name, provider, oauth
