@@ -5,7 +5,7 @@ function getBackendBaseUrl() {
     return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 }
 
-export async function PATCH(request, { params }) {
+export async function PATCH(_request, { params }) {
     const session = await auth();
     const token = session?.user?.token;
 
@@ -35,10 +35,7 @@ export async function PATCH(request, { params }) {
     }
 
     try {
-        const forceCloseRequested = request?.nextUrl?.searchParams?.get("force") === "true";
-        const endpoint = forceCloseRequested ? "force-close" : "resolve";
-
-        const response = await fetch(`${getBackendBaseUrl()}/api/incidents/${incidentId}/${endpoint}`, {
+        const response = await fetch(`${getBackendBaseUrl()}/api/incidents/${incidentId}/force-close`, {
             method: "PATCH",
             headers: {
                 Authorization: `Bearer ${token}`,
@@ -53,7 +50,7 @@ export async function PATCH(request, { params }) {
             payload = {
                 status: response.ok ? "success" : "error",
                 statusCode: response.status,
-                msg: response.ok ? "Incident resolved" : "Failed to resolve incident",
+                msg: response.ok ? "Incident closed by admin" : "Failed to force close incident",
             };
         }
 
@@ -63,7 +60,7 @@ export async function PATCH(request, { params }) {
             {
                 status: "error",
                 statusCode: 500,
-                msg: "Failed to resolve incident",
+                msg: "Failed to force close incident",
             },
             { status: 500 }
         );

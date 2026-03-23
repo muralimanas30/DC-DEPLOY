@@ -147,6 +147,36 @@ export default function useIncident() {
 		}
 	}, []);
 
+	const forceCloseIncident = useCallback(async (incidentId) => {
+		const normalizedIncidentId = normalizeIncidentId(incidentId);
+		if (!normalizedIncidentId) return null;
+
+		setLoading(true);
+		setError("");
+
+		try {
+			const res = await fetch(`/api/incidents/${normalizedIncidentId}/force-close`, {
+				method: "PATCH",
+			});
+
+			const payload = await res.json();
+
+			if (!res.ok || payload?.status !== "success") {
+				throw new Error(payload?.msg || "Failed to force close incident");
+			}
+
+			const incident = payload?.data?.incident || null;
+			setSelectedIncident(incident);
+			return incident;
+		} catch (err) {
+			const message = err?.message || "Failed to force close incident";
+			setError(message);
+			return null;
+		} finally {
+			setLoading(false);
+		}
+	}, []);
+
 	const requestIncidentMutation = useCallback(async (url, options, fallbackMessage) => {
 		setLoading(true);
 		setError("");
@@ -232,6 +262,7 @@ export default function useIncident() {
 		getIncidentById,
 		createIncident,
 		resolveIncident,
+		forceCloseIncident,
 		joinIncident,
 		leaveIncident,
 		assignUser,

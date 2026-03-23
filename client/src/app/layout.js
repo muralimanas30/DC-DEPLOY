@@ -3,6 +3,7 @@ import "./globals.css";
 
 import Provider from "./Provider";
 import Navbar from "@/components/NavBar";
+import AuthGuard from "@/components/AuthGuard";
 import { auth } from "./api/auth/[...nextauth]/route";
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,8 +31,10 @@ export default async function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Provider>
-          <Navbar  />
-          {children}
+          <AuthGuard>
+            <Navbar  />
+            {children}
+          </AuthGuard>
         </Provider>
       </body>
     </html>

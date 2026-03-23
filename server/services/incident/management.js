@@ -143,6 +143,10 @@ const getAvailableVolunteers = async (req, res, next) => {
         }
 
         const incident = await loadIncident(incidentId);
+        if (incident.status === "closed") {
+            throw new AppError("Incident is closed", StatusCodes.CONFLICT, "INCIDENT_CLOSED");
+        }
+
         const { isPlatformAdmin, isAdminParticipant } = ensureIncidentVisible(
             incident,
             currentUser._id,

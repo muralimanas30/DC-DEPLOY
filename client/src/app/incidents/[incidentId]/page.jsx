@@ -233,8 +233,8 @@ export default function IncidentDetailPage() {
 
     const onResolve = async (forceClose = false) => {
         if (!incidentId) return;
-        const suffix = forceClose ? "?force=true" : "";
-        await runMutation(`/api/incidents/${incidentId}/resolve${suffix}`, { method: "PATCH" });
+        const actionPath = forceClose ? "force-close" : "resolve";
+        await runMutation(`/api/incidents/${incidentId}/${actionPath}`, { method: "PATCH" });
         setSelectedUser(null);
         setShowVolunteerPicker(false);
     };

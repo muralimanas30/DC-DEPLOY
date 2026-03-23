@@ -13,5 +13,6 @@ router.post("/:incidentId/leave", authMiddleware, incidentController.leaveIncide
 router.post("/:incidentId/assign", authMiddleware, incidentController.assignUser);
 router.delete("/:incidentId/assign/:userId", authMiddleware, incidentController.unassignUser);
 router.patch("/:incidentId/resolve", authMiddleware, incidentController.resolveIncident);
+router.patch("/:incidentId/force-close", authMiddleware, incidentController.forceCloseIncident);
 
 module.exports = { incidentRouter: router };

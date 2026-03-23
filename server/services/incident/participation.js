@@ -44,6 +44,37 @@ const loadIncident = async (incidentId) => {
     return incident;
 };
 
+const ensureNoConflictingActiveAssignment = async (
+    userDoc,
+    currentIncidentId,
+    conflictMessage,
+    conflictCode
+) => {
+    const assignedId = userDoc?.assignedIncident ? userDoc.assignedIncident.toString() : null;
+    const currentId = currentIncidentId?.toString();
+
+    if (!assignedId || assignedId === currentId) {
+        return;
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(assignedId)) {
+        await User.updateOne({ _id: userDoc._id }, { $set: { assignedIncident: null } });
+        return;
+    }
+
+    const assignedIncident = await Incident.findById(assignedId).select("_id status");
+
+    if (!assignedIncident || assignedIncident.status === "closed") {
+        await User.updateOne(
+            { _id: userDoc._id, assignedIncident: assignedId },
+            { $set: { assignedIncident: null } }
+        );
+        return;
+    }
+
+    throw new AppError(conflictMessage, StatusCodes.CONFLICT, conflictCode);
+};
+
 const normalizeParticipantState = async (incident) => {
     const victims = (incident.victims || []).map((id) => id.toString());
     const volunteers = (incident.volunteers || []).map((id) => id.toString());
@@ -99,15 +130,13 @@ const joinIncident = async (req, res, next) => {
 
         const incident = await loadIncident(incidentId);
         const meId = me._id.toString();
-        const existingAssignedIncidentId = me?.assignedIncident ? me.assignedIncident.toString() : null;
 
-        if (existingAssignedIncidentId && existingAssignedIncidentId !== incident._id.toString()) {
-            throw new AppError(
-                "You are already assigned to another active incident. Resolve/leave it before joining a new one",
-                StatusCodes.CONFLICT,
-                "ALREADY_ASSIGNED_TO_OTHER_INCIDENT"
-            );
-        }
+        await ensureNoConflictingActiveAssignment(
+            me,
+            incident._id,
+            "You are already assigned to another active incident. Resolve/leave it before joining a new one",
+            "ALREADY_ASSIGNED_TO_OTHER_INCIDENT"
+        );
 
         const targetField = roleToField[me.activeRole] || "victims";
 
@@ -198,6 +227,13 @@ const assignUser = async (req, res, next) => {
         if (!targetUser) {
             throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
         }
+
+        await ensureNoConflictingActiveAssignment(
+            targetUser,
+            incident._id,
+            "User is already assigned to another active incident",
+            "TARGET_ALREADY_ASSIGNED_TO_OTHER_INCIDENT"
+        );
 
         const targetId = targetUser._id.toString();
         const targetRole = targetUser.activeRole || "victim";

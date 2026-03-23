@@ -12,7 +12,8 @@ const resolveIncident = async (req, res, next) => {
     try {
         const { incidentId } = req.params;
         const rawUserId = req.user?.id || req.user?._id || req.userId;
-        const forceCloseRequested = String(req.query?.force || "").toLowerCase() === "true";
+        const forceCloseRequested = Boolean(req.forceCloseRequested)
+            || String(req.query?.force || "").toLowerCase() === "true";
 
         if (!mongoose.Types.ObjectId.isValid(incidentId)) {
             throw new AppError("Invalid incident id", StatusCodes.BAD_REQUEST, "INVALID_INCIDENT_ID");
@@ -21,6 +22,10 @@ const resolveIncident = async (req, res, next) => {
         const incident = await Incident.findById(incidentId);
         if (!incident) {
             throw new AppError("Incident not found", StatusCodes.NOT_FOUND, "INCIDENT_NOT_FOUND");
+        }
+
+        if (incident.status === "closed") {
+            throw new AppError("Incident is closed", StatusCodes.CONFLICT, "INCIDENT_CLOSED");
         }
 
         const me = (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId))
@@ -160,4 +165,12 @@ const resolveIncident = async (req, res, next) => {
     }
 };
 
-module.exports = { resolveIncident };
+const forceCloseIncident = async (req, res, next) => {
+    req.forceCloseRequested = true;
+    return resolveIncident(req, res, next);
+};
+
+module.exports = {
+    resolveIncident,
+    forceCloseIncident,
+};
