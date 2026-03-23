@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { connectSocket, getSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
@@ -387,6 +388,10 @@ export default function IncidentDetailPage() {
                                             {loading ? "Closing..." : "Force Close"}
                                         </button>
                                     )}
+
+                                    <Link href={`/incidents/${incidentId}/chat`} className="btn btn-outline btn-sm">
+                                        Open Chat Workspace
+                                    </Link>
                                 </div>
                             )}
                         </div>
@@ -475,6 +480,7 @@ export default function IncidentDetailPage() {
                             </div>
                         </section>
                     )}
+
                 </>
             ) : (
                 <div className="alert alert-warning">

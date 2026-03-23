@@ -3,4 +3,8 @@ export const SOCKET_EVENTS = {
     INCIDENT_CLOSED: "incident:closed",
     INCIDENT_WATCH: "incident:watch",
     INCIDENT_UNWATCH: "incident:unwatch",
+    INCIDENT_ALERT: "incidentAlert",
+    INCIDENT_ALERT_ERROR: "incidentAlert:error",
+    INCIDENT_CHAT_MESSAGE: "incident:chat-message",
+    SEND_ALERT: "sendAlert",
 };

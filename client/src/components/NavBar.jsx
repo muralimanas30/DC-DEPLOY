@@ -5,11 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Breadcrumbs from "./Breadcrumbs";
+import { connectSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
+import { SOCKET_EVENTS } from "@/lib/realtime";
 
 export default function Navbar() {
     const { data: session } = useSession();
     const pathname = usePathname();
     const [theme, setTheme] = useState("dark");
+    const [liveAssignedIncidentId, setLiveAssignedIncidentId] = useState(null);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -22,23 +25,6 @@ export default function Navbar() {
         setTheme(nextTheme);
     };
 
-    const navLinks = useMemo(() => {
-        if (!session?.user) return [];
-
-        return [
-            { href: "/incidents", label: "Incidents" },
-            { href: "/profile", label: "Profile" },
-        ];
-    }, [session?.user]);
-
-    const activeRole = session?.user?.activeRole || session?.user?.role || "guest";
-    const firstName = (session?.user?.name || "Guest").trim().split(/\s+/)[0];
-
-    const getRoleLabel = (role) => {
-        if (!role) return "Guest";
-        return role.charAt(0).toUpperCase() + role.slice(1);
-    };
-
     const normalizedPath = useMemo(() => {
         if (!pathname) return "/";
         const withoutQuery = pathname.split("?")[0];
@@ -47,6 +33,73 @@ export default function Navbar() {
         }
         return withoutQuery;
     }, [pathname]);
+
+    const assignedIncidentId = session?.user?.token ? liveAssignedIncidentId : null;
+
+    useEffect(() => {
+        const socketToken = session?.user?.token;
+        if (!socketToken) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const refreshAssignedIncident = async () => {
+            try {
+                const res = await fetch("/api/incidents?assignedOnly=true&page=1&limit=1", {
+                    method: "GET",
+                    cache: "no-store",
+                });
+                const payload = await res.json();
+                const assigned = payload?.data?.incidents?.[0] || null;
+                const assignedId = assigned?._id || assigned?.id || null;
+                if (!cancelled) {
+                    setLiveAssignedIncidentId(assignedId || null);
+                }
+            } catch {
+                if (!cancelled) {
+                    setLiveAssignedIncidentId(null);
+                }
+            }
+        };
+
+        connectSocket(socketToken);
+        refreshAssignedIncident();
+
+        const onIncidentMutation = () => {
+            refreshAssignedIncident();
+        };
+
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentMutation);
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentMutation);
+
+        return () => {
+            cancelled = true;
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentMutation);
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentMutation);
+        };
+    }, [session?.user?.token]);
+
+    const getChatHref = () => {
+        if (!assignedIncidentId) return null;
+        return `/incidents/${assignedIncidentId}/chat`;
+    };
+
+    const navLinks = session?.user
+        ? [
+            { href: "/incidents", label: "Incidents" },
+            ...(assignedIncidentId ? [{ href: getChatHref(), label: "Chat" }] : []),
+            { href: "/profile", label: "Profile" },
+        ]
+        : [];
+
+    const activeRole = session?.user?.activeRole || session?.user?.role || "guest";
+    const firstName = (session?.user?.name || "Guest").trim().split(/\s+/)[0];
+
+    const getRoleLabel = (role) => {
+        if (!role) return "Guest";
+        return role.charAt(0).toUpperCase() + role.slice(1);
+    };
 
     const isActiveLink = (href) => {
         if (!normalizedPath) return false;
@@ -119,7 +172,7 @@ export default function Navbar() {
                         const active = isActiveLink(link.href);
                         return (
                             <Link
-                                key={link.href}
+                                key={`${link.label}:${link.href}`}
                                 href={link.href}
                                 className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-colors ${
                                     active
