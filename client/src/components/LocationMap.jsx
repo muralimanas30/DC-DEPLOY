@@ -1,45 +1,131 @@
 "use client";
 import PropTypes from "prop-types";
+import L from "leaflet";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+
+function normalizeCenter(markers, center) {
+    if (center && Number.isFinite(center.lng) && Number.isFinite(center.lat)) {
+        return [center.lat, center.lng];
+    }
+
+    const first = markers.find((marker) => Number.isFinite(marker?.lat) && Number.isFinite(marker?.lng));
+    if (first) {
+        return [first.lat, first.lng];
+    }
+
+    return [20, 0];
+}
+
+function getMarkerColor(type) {
+    if (type === "incident") return "#ef4444";
+    if (type === "self") return "#2563eb";
+    if (type === "victim") return "#f97316";
+    if (type === "volunteer") return "#16a34a";
+    if (type === "admin") return "#9333ea";
+    return "#6b7280";
+}
+
+function createMarkerIcon(type) {
+    const color = getMarkerColor(type);
+    return L.divIcon({
+        className: "",
+        html: `<span style="display:block;width:14px;height:14px;border-radius:999px;border:2px solid #fff;background:${color};box-shadow:0 0 0 2px rgba(0,0,0,0.22)"></span>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+        popupAnchor: [0, -8],
+    });
+}
+
+function FitBounds({ markers }) {
+    const map = useMap();
+
+    if (!markers.length) {
+        return null;
+    }
+
+    const points = markers
+        .filter((marker) => Number.isFinite(marker?.lat) && Number.isFinite(marker?.lng))
+        .map((marker) => [marker.lat, marker.lng]);
+
+    if (!points.length) {
+        return null;
+    }
+
+    if (points.length === 1) {
+        map.setView(points[0], 13);
+        return null;
+    }
+
+    map.fitBounds(points, { padding: [36, 36] });
+    return null;
+}
 
 /**
  * LocationMap
- * Shows a scrollable, zoomable map with multiple markers (visual overlay only).
+ * Interactive map with colored markers and detail popups.
  * Props:
- *   markers: [{ lng, lat, label, type }]
+ *   markers: [{ id, lng, lat, label, type, title, details, href }]
  *   center: { lng, lat }
  */
 export default function LocationMap({ markers = [], center }) {
-    // Default center: first marker or [0,0]
-    const mapCenter = center || (markers[0] ? { lng: markers[0].lng, lat: markers[0].lat } : { lng: 0, lat: 0 });
+    const validMarkers = markers.filter((marker) => Number.isFinite(marker?.lat) && Number.isFinite(marker?.lng));
+    const mapCenter = normalizeCenter(validMarkers, center);
 
-    // For demo: overlay colored dots at center (not accurate, but works for simple display)
     return (
-        <div className="w-full h-64 overflow-hidden rounded-lg relative">
-            <iframe
-                title="Incident Map"
-                width="100%"
-                height="100%"
-                style={{ minHeight: "16rem", border: 0 }}
-                loading="lazy"
-                allowFullScreen
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=${mapCenter.lng-0.01},${mapCenter.lat-0.01},${mapCenter.lng+0.01},${mapCenter.lat+0.01}&layer=mapnik&marker=${mapCenter.lat},${mapCenter.lng}`}
-            ></iframe>
-            {/* Overlay markers for each victim/volunteer (visual only, not interactive) */}
-            <div className="absolute inset-0 pointer-events-none">
-                {markers.map((m, idx) => {
-                    // victims=red, volunteers=blue, user=green
-                    let color = m.type === "victim" ? "bg-red-500" : m.type === "volunteer" ? "bg-blue-500" : "bg-green-500";
-                    // For demo, stack dots at center
-                    return (
-                        <div
-                            key={idx}
-                            className={`absolute left-1/2 top-1/2 w-4 h-4 rounded-full border-2 border-white ${color}`}
-                            style={{ transform: `translate(-50%, -50%) scale(${1 + idx * 0.2})` }}
-                            title={m.label}
-                        ></div>
-                    );
-                })}
-            </div>
+        <div className="w-full h-[70vh] overflow-hidden rounded-xl border border-base-300">
+            <MapContainer center={mapCenter} zoom={13} className="h-full w-full" scrollWheelZoom>
+                <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <FitBounds markers={validMarkers} />
+
+                {validMarkers.map((marker, index) => (
+                    <Marker
+                        key={marker.id || `${marker.type || "m"}:${marker.lat}:${marker.lng}:${index}`}
+                        position={[marker.lat, marker.lng]}
+                        icon={createMarkerIcon(marker.type)}
+                    >
+                        <Popup>
+                            <div className="min-w-55 space-y-1">
+                                <div className="font-semibold text-sm">{marker.title || marker.label || "Map marker"}</div>
+                                {marker.label ? <div className="text-xs opacity-80">{marker.label}</div> : null}
+                                {Array.isArray(marker.details) && marker.details.length > 0 ? (
+                                    <ul className="text-xs opacity-80 list-disc list-inside">
+                                        {marker.details.map((item) => (
+                                            <li key={item}>{item}</li>
+                                        ))}
+                                    </ul>
+                                ) : null}
+                                {marker.href ? (
+                                    <a className="link link-primary text-xs" href={marker.href}>
+                                        Open details
+                                    </a>
+                                ) : null}
+                            </div>
+                        </Popup>
+                    </Marker>
+                ))}
+            </MapContainer>
         </div>
     );
 }
+
+LocationMap.propTypes = {
+    markers: PropTypes.arrayOf(
+        PropTypes.shape({
+            id: PropTypes.string,
+            lng: PropTypes.number,
+            lat: PropTypes.number,
+            label: PropTypes.string,
+            title: PropTypes.string,
+            type: PropTypes.string,
+            details: PropTypes.arrayOf(PropTypes.string),
+            href: PropTypes.string,
+        })
+    ),
+    center: PropTypes.shape({
+        lng: PropTypes.number,
+        lat: PropTypes.number,
+    }),
+};

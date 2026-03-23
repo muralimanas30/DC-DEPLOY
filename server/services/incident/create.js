@@ -5,6 +5,55 @@ const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
 
+const normalizePointLocation = (rawLocation) => {
+    if (!rawLocation || typeof rawLocation !== "object") {
+        return null;
+    }
+
+    if (
+        rawLocation.type === "Point"
+        && Array.isArray(rawLocation.coordinates)
+        && rawLocation.coordinates.length === 2
+    ) {
+        const first = Number(rawLocation.coordinates[0]);
+        const second = Number(rawLocation.coordinates[1]);
+
+        if (Number.isFinite(first) && Number.isFinite(second)) {
+            let lng = first;
+            let lat = second;
+
+            // Heal common swapped payload format: [lat, lng].
+            if (Math.abs(lng) <= 90 && Math.abs(lat) > 90) {
+                lng = second;
+                lat = first;
+            }
+
+            if (Math.abs(lng) <= 180 && Math.abs(lat) <= 90) {
+                return {
+                    type: "Point",
+                    coordinates: [lng, lat],
+                };
+            }
+        }
+    }
+
+    if (Number.isFinite(rawLocation.lng) && Number.isFinite(rawLocation.lat)) {
+        return {
+            type: "Point",
+            coordinates: [Number(rawLocation.lng), Number(rawLocation.lat)],
+        };
+    }
+
+    if (Number.isFinite(rawLocation.longitude) && Number.isFinite(rawLocation.latitude)) {
+        return {
+            type: "Point",
+            coordinates: [Number(rawLocation.longitude), Number(rawLocation.latitude)],
+        };
+    }
+
+    return null;
+};
+
 const createIncident = async (req, res, next) => {
     try {
         const { title, description, category, severity, location } = req.body;
@@ -46,12 +95,23 @@ const createIncident = async (req, res, next) => {
             }
         }
 
+        const creatorLocation = normalizePointLocation(creator.currentLocation);
+        const incidentLocation = normalizePointLocation(location) || creatorLocation;
+
+        if (!incidentLocation) {
+            throw new AppError(
+                "A valid incident location is required",
+                StatusCodes.BAD_REQUEST,
+                "INVALID_INCIDENT_LOCATION"
+            );
+        }
+
         const incident = await Incident.create({
             title,
             description,
             category,
             severity,
-            location,
+            location: incidentLocation,
             creatorId,
             creatorRole,
             victims: creatorRole === "victim" ? [creator._id] : [],

@@ -1,11 +1,11 @@
 "use client"
 import Link from "next/link";
 import Logout from "./form/Logout";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Breadcrumbs from "./Breadcrumbs";
-import { connectSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
+import { connectSocket, getSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
 import { SOCKET_EVENTS } from "@/lib/realtime";
 
 export default function Navbar() {
@@ -13,6 +13,8 @@ export default function Navbar() {
     const pathname = usePathname();
     const [theme, setTheme] = useState("dark");
     const [liveAssignedIncidentId, setLiveAssignedIncidentId] = useState(null);
+    const watchedIncidentRef = useRef(null);
+    const lastLocationUploadAtRef = useRef(0);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -80,6 +82,86 @@ export default function Navbar() {
         };
     }, [session?.user?.token]);
 
+    useEffect(() => {
+        const socketToken = session?.user?.token;
+        if (!socketToken) return;
+
+        const socket = connectSocket(socketToken);
+        if (!socket) return;
+
+        const watchAssignedIncident = () => {
+            const activeSocket = getSocket();
+            if (!activeSocket || !activeSocket.connected) return;
+
+            const nextAssignedId = assignedIncidentId ? String(assignedIncidentId) : null;
+            const previousAssignedId = watchedIncidentRef.current;
+
+            if (previousAssignedId && previousAssignedId !== nextAssignedId) {
+                activeSocket.emit(SOCKET_EVENTS.INCIDENT_UNWATCH, { incidentId: previousAssignedId });
+            }
+
+            if (nextAssignedId && nextAssignedId !== previousAssignedId) {
+                activeSocket.emit(SOCKET_EVENTS.INCIDENT_WATCH, { incidentId: nextAssignedId });
+            }
+
+            watchedIncidentRef.current = nextAssignedId;
+        };
+
+        if (socket.connected) {
+            watchAssignedIncident();
+        }
+
+        socket.on("connect", watchAssignedIncident);
+
+        return () => {
+            socket.off("connect", watchAssignedIncident);
+        };
+    }, [session?.user?.token, assignedIncidentId]);
+
+    useEffect(() => {
+        const socketToken = session?.user?.token;
+        if (!socketToken) return;
+        if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
+
+        const pushCurrentLocation = async (lng, lat) => {
+            const now = Date.now();
+            if (now - lastLocationUploadAtRef.current < 10000) return;
+            lastLocationUploadAtRef.current = now;
+
+            try {
+                await fetch("/api/update", {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        currentLocation: { type: "Point", coordinates: [lng, lat] },
+                        isOnline: true,
+                        lastSeen: new Date().toISOString(),
+                    }),
+                });
+            } catch {
+            }
+        };
+
+        const watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                const lng = Number(position?.coords?.longitude);
+                const lat = Number(position?.coords?.latitude);
+                if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+                pushCurrentLocation(lng, lat);
+            },
+            () => {
+            },
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+        );
+
+        return () => {
+            navigator.geolocation.clearWatch(watchId);
+        };
+    }, [session?.user?.token]);
+
     const getChatHref = () => {
         if (!assignedIncidentId) return null;
         return `/incidents/${assignedIncidentId}/chat`;
@@ -88,6 +170,7 @@ export default function Navbar() {
     const navLinks = session?.user
         ? [
             { href: "/incidents", label: "Incidents" },
+            { href: "/map", label: "Map" },
             ...(assignedIncidentId ? [{ href: getChatHref(), label: "Chat" }] : []),
             { href: "/profile", label: "Profile" },
         ]

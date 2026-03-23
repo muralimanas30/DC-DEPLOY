@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { connectSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
 import { SOCKET_EVENTS } from "@/lib/realtime";
+import useCurrentLocation from "@/hooks/useCurrentLocation";
 
 const severities = ["low", "medium", "high", "critical"];
 const activeStatuses = ["active"];
@@ -31,6 +32,15 @@ function getIncidentCounts(incident) {
     };
 }
 
+function hasValidPointLocation(location) {
+    const coordinates = location?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length !== 2) return false;
+
+    const lng = Number(coordinates[0]);
+    const lat = Number(coordinates[1]);
+    return Number.isFinite(lng) && Number.isFinite(lat);
+}
+
 export default function IncidentsPage() {
     const router = useRouter();
     const {
@@ -49,6 +59,8 @@ export default function IncidentsPage() {
     const myUserId = session?.user?.id || null;
     const enforceAssignedLock = currentRole !== "admin";
     const socketToken = session?.user?.token;
+    const { location: currentLocation, error: locationError } = useCurrentLocation();
+    const hasLiveLocation = hasValidPointLocation(currentLocation);
 
     const [page, setPage] = useState(1);
     const [severity, setSeverity] = useState("");
@@ -157,7 +169,10 @@ export default function IncidentsPage() {
         event.preventDefault();
         clearError();
 
-        const created = await createIncident(form);
+        const created = await createIncident({
+            ...form,
+            location: currentLocation,
+        });
         if (!created) return;
 
         const createdId = created?._id || created?.id || null;
@@ -291,6 +306,16 @@ export default function IncidentsPage() {
                     <div className="card-body">
                         <h2 className="card-title">Create Incident</h2>
 
+                        {locationError ? (
+                            <div className="alert alert-warning">
+                                <span>{locationError}</span>
+                            </div>
+                        ) : !hasLiveLocation ? (
+                            <div className="alert alert-info">
+                                <span>Fetching your location. Incident creation unlocks once location is available.</span>
+                            </div>
+                        ) : null}
+
                         {error && (
                             <div className="alert alert-error">
                                 <span>{error}</span>
@@ -363,7 +388,7 @@ export default function IncidentsPage() {
                                 </select>
                             </div>
 
-                            <button type="submit" className="btn btn-primary" disabled={creating}>
+                            <button type="submit" className="btn btn-primary" disabled={creating || !hasLiveLocation}>
                                 {creating ? "Creating..." : "Create Incident"}
                             </button>
                         </form>

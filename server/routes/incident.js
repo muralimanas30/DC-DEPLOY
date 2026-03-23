@@ -5,6 +5,7 @@ const { incidentController } = require("../controllers/incidentController");
 
 router.post("/", authMiddleware, incidentController.createIncident);
 router.get("/", authMiddleware, incidentController.listIncidents);
+router.get("/map-feed", authMiddleware, incidentController.getIncidentMapFeed);
 router.get("/:incidentId", authMiddleware, incidentController.getIncidentById);
 router.get("/:incidentId/participants", authMiddleware, incidentController.getIncidentParticipants);
 router.get("/:incidentId/available-volunteers", authMiddleware, incidentController.getAvailableVolunteers);

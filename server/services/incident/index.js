@@ -5,6 +5,7 @@ const { resolveIncident, forceCloseIncident } = require("./resolve");
 const { joinIncident, leaveIncident, assignUser, unassignUser } = require("./participation");
 const { getIncidentParticipants, getAvailableVolunteers } = require("./management");
 const { listIncidentMessages, sendIncidentMessage, sendIncidentAlert } = require("./chat");
+const { getIncidentMapFeed } = require("./map");
 
 module.exports = {
     createIncident,
@@ -18,6 +19,7 @@ module.exports = {
     unassignUser,
     getIncidentParticipants,
     getAvailableVolunteers,
+    getIncidentMapFeed,
     listIncidentMessages,
     sendIncidentMessage,
     sendIncidentAlert,

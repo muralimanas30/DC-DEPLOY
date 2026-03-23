@@ -70,6 +70,7 @@ const toUserSummary = (user) => ({
     skills: Array.isArray(user.skills) ? user.skills : [],
     assignedIncident: user.assignedIncident || null,
     isOnline: Boolean(user.isOnline),
+    currentLocation: user.currentLocation || null,
 });
 
 const getIncidentParticipants = async (req, res, next) => {
@@ -106,7 +107,7 @@ const getIncidentParticipants = async (req, res, next) => {
             .filter((id) => mongoose.Types.ObjectId.isValid(id));
 
         const users = await User.find({ _id: { $in: allParticipantIds } })
-            .select("_id name email activeRole roles skills assignedIncident isOnline")
+            .select("_id name email activeRole roles skills assignedIncident isOnline currentLocation")
             .lean();
 
         const byId = new Map(users.map((user) => [toStr(user._id), user]));
