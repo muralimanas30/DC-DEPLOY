@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { auth } from "../api/auth/[...nextauth]/route";
 import RoleBriefingSwitcher from "@/components/dashboard/RoleBriefingSwitcher";
+import CurrentSessionRealtimeCard from "@/components/dashboard/CurrentSessionRealtimeCard";
+import IncidentPulseRealtimeCard from "@/components/dashboard/IncidentPulseRealtimeCard";
 
 const ROLE_CONTENT = {
     victim: {
@@ -50,12 +52,6 @@ const COMMON_MODULES = [
         description: "Role state, assignment lock, and user skills are managed here.",
         href: "/profile",
         cta: "Open Profile",
-    },
-    {
-        title: "Operational Readiness",
-        description: "Use this dashboard as your launch point for role-based response flow.",
-        href: "/dashboard",
-        cta: "Refresh Dashboard",
     },
 ];
 
@@ -119,25 +115,11 @@ export default async function DashboardPage() {
                     </div>
                 </article>
 
-                <article className="card bg-base-100 border border-base-300 shadow-xl">
-                    <div className="card-body">
-                        <h2 className="card-title text-xl">Current Session</h2>
-                        <div className="space-y-2 text-sm">
-                            <p><span className="font-semibold">User:</span> {user?.name || "Guest"}</p>
-                            <p><span className="font-semibold">Role:</span> {effectiveRole || "guest"}</p>
-                            <p>
-                                <span className="font-semibold">Assignment:</span>{" "}
-                                {assignedIncident ? "Active incident linked" : "No active assignment"}
-                            </p>
-                        </div>
-
-                        {assignedIncident && (
-                            <Link href="/incidents" className="btn btn-primary btn-sm mt-3">
-                                Open Assigned Incident
-                            </Link>
-                        )}
-                    </div>
-                </article>
+                <CurrentSessionRealtimeCard
+                    initialUserName={user?.name || "Guest"}
+                    initialRole={effectiveRole || "guest"}
+                    initialAssignedIncident={assignedIncident ? String(assignedIncident) : null}
+                />
             </section>
 
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -152,6 +134,8 @@ export default async function DashboardPage() {
                         </div>
                     </article>
                 ))}
+
+                <IncidentPulseRealtimeCard />
             </section>
 
             {user && roleMeta ? (
