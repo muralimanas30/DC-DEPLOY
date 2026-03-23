@@ -8,15 +8,17 @@ export default function RouteLoader() {
 
     useEffect(() => {
         const { events } = router;
+        const handleRouteStart = () => setLoading(true);
+        const handleRouteDone = () => setLoading(false);
 
-        events.onRouteStart = () => setLoading(true);
-        events.onRouteComplete = () => setLoading(false);
-        events.onRouteError = () => setLoading(false);
+        events.on("routeStart", handleRouteStart);
+        events.on("routeComplete", handleRouteDone);
+        events.on("routeError", handleRouteDone);
 
         return () => {
-            events.onRouteStart = null;
-            events.onRouteComplete = null;
-            events.onRouteError = null;
+            events.off("routeStart");
+            events.off("routeComplete");
+            events.off("routeError");
         };
     }, [router]);
 

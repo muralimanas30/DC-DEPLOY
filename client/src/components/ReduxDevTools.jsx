@@ -8,15 +8,18 @@ import React from "react";
 import { useStore } from "react-redux";
 
 export default function ReduxDevTools() {
-    // Only show in development
-    if (process.env.NODE_ENV !== "development") return null;
     const store = useStore();
+    const isDevelopment = process.env.NODE_ENV === "development";
 
     React.useEffect(() => {
+        if (!isDevelopment) return;
         if (typeof window !== "undefined" && window.__REDUX_DEVTOOLS_EXTENSION__) {
             window.__REDUX_DEVTOOLS_EXTENSION__.connect();
         }
-    }, []);
+    }, [isDevelopment]);
+
+    // Only show in development
+    if (!isDevelopment) return null;
 
     // Optionally, show a minimal UI or just nothing (since devtools is browser extension)
     return (
