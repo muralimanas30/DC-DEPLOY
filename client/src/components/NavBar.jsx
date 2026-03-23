@@ -9,12 +9,7 @@ import Breadcrumbs from "./Breadcrumbs";
 export default function Navbar() {
     const { data: session } = useSession();
     const pathname = usePathname();
-    const [theme, setTheme] = useState(() => {
-        if (typeof window === "undefined") return "dark";
-        return sessionStorage.getItem("theme")
-            || document.documentElement.getAttribute("data-theme")
-            || "dark";
-    });
+    const [theme, setTheme] = useState("dark");
 
     useEffect(() => {
         if (typeof window === "undefined") return;

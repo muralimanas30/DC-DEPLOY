@@ -43,6 +43,28 @@ const listIncidents = async (req, res, next) => {
                 });
             }
 
+            const assignedIncident = await Incident.findById(me.assignedIncident).select("_id status");
+            if (!assignedIncident || assignedIncident.status === "closed") {
+                await User.updateOne(
+                    { _id: meId, assignedIncident: me.assignedIncident },
+                    { $set: { assignedIncident: null } }
+                );
+
+                return sendSuccess(res, {
+                    statusCode: StatusCodes.OK,
+                    msg: "Incidents fetched successfully",
+                    data: {
+                        incidents: [],
+                    },
+                    meta: {
+                        page,
+                        limit,
+                        total: 0,
+                        totalPages: 1,
+                    },
+                });
+            }
+
             filter._id = me.assignedIncident;
         }
 

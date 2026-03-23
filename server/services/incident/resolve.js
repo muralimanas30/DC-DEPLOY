@@ -4,6 +4,7 @@ const { AppError } = require("../../errorHandler/errorHandler");
 const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
+const { emitIncidentChanged } = require("../../socket");
 
 const toObjectIdString = (value) => value?.toString();
 const removeUserFromList = (list = [], userId) => list.filter((id) => toObjectIdString(id) !== userId);
@@ -77,6 +78,15 @@ const resolveIncident = async (req, res, next) => {
                 );
             }
 
+            emitIncidentChanged({
+                type: "force-closed",
+                incident,
+                actorId: currentUserId,
+                meta: {
+                    autoClosedBecauseNoVictims: false,
+                },
+            });
+
             return sendSuccess(res, {
                 statusCode: StatusCodes.OK,
                 msg: "Incident closed by admin",
@@ -136,6 +146,15 @@ const resolveIncident = async (req, res, next) => {
                 );
             }
 
+            emitIncidentChanged({
+                type: "closed",
+                incident: updatedIncident,
+                actorId: currentUserId,
+                meta: {
+                    autoClosedBecauseNoVictims: true,
+                },
+            });
+
             return sendSuccess(res, {
                 statusCode: StatusCodes.OK,
                 msg: "Incident closed successfully",
@@ -151,6 +170,15 @@ const resolveIncident = async (req, res, next) => {
 
         // Step 2: current user's assignment should be cleared when they resolve themselves out.
         await User.updateOne({ _id: currentUser._id }, { $set: { assignedIncident: null } });
+
+        emitIncidentChanged({
+            type: "resolved",
+            incident: updatedIncident,
+            actorId: currentUserId,
+            meta: {
+                autoClosedBecauseNoVictims: false,
+            },
+        });
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

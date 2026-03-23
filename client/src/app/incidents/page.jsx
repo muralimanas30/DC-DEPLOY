@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useIncident from "@/hooks/useIncident";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { connectSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
+import { SOCKET_EVENTS } from "@/lib/realtime";
 
 const severities = ["low", "medium", "high", "critical"];
 const activeStatuses = ["active"];
@@ -46,6 +48,7 @@ export default function IncidentsPage() {
     const currentRole = session?.user?.activeRole || session?.user?.role || "victim";
     const myUserId = session?.user?.id || null;
     const enforceAssignedLock = currentRole !== "admin";
+    const socketToken = session?.user?.token;
 
     const [page, setPage] = useState(1);
     const [severity, setSeverity] = useState("");
@@ -61,56 +64,91 @@ export default function IncidentsPage() {
     const [activeIncidentId, setActiveIncidentId] = useState(null);
     const [assignedIncidentSnapshot, setAssignedIncidentSnapshot] = useState(null);
     const [infoMessage, setInfoMessage] = useState("");
-    const assignedIncidentId = extractIncidentId(session?.user?.assignedIncident) || activeIncidentId;
+    const assignedIncidentId = activeIncidentId;
+
+    const loadAssignedIncidentView = useCallback(async () => {
+        setCheckingActiveIncident(true);
+
+        try {
+            const res = await fetch("/api/incidents?assignedOnly=true&page=1&limit=1", {
+                method: "GET",
+                cache: "no-store",
+            });
+
+            const payload = await res.json();
+            const assignedIncidents = payload?.data?.incidents || [];
+            const activeIncident = assignedIncidents.find((incident) =>
+                activeStatuses.includes(incident?.status)
+            ) || assignedIncidents[0];
+
+            setHasActiveIncident(Boolean(activeIncident));
+            const incidentId = extractIncidentId(activeIncident);
+            setActiveIncidentId(incidentId);
+            setAssignedIncidentSnapshot(activeIncident || null);
+        } catch {
+            setHasActiveIncident(false);
+            setActiveIncidentId(null);
+            setAssignedIncidentSnapshot(null);
+        } finally {
+            setCheckingActiveIncident(false);
+        }
+    }, []);
 
     useEffect(() => {
         let ignore = false;
 
-        const checkMyActiveIncident = async () => {
-            setCheckingActiveIncident(true);
-
-            try {
-                const res = await fetch("/api/incidents?assignedOnly=true&page=1&limit=1", {
-                    method: "GET",
-                    cache: "no-store",
-                });
-
-                const payload = await res.json();
-                const assignedIncidents = payload?.data?.incidents || [];
-                const activeIncident = assignedIncidents.find((incident) =>
-                    activeStatuses.includes(incident?.status)
-                ) || assignedIncidents[0];
-
-                if (!ignore) {
-                    setHasActiveIncident(Boolean(activeIncident));
-                    const incidentId = extractIncidentId(activeIncident);
-                    setActiveIncidentId(incidentId);
-                    setAssignedIncidentSnapshot(activeIncident || null);
-                }
-            } catch {
-                if (!ignore) {
-                    const sessionAssignedIncident = session?.user?.assignedIncident;
-                    const incidentId = extractIncidentId(sessionAssignedIncident);
-                    setHasActiveIncident(Boolean(incidentId));
-                    setActiveIncidentId(incidentId);
-                    setAssignedIncidentSnapshot(null);
-                }
-            } finally {
-                if (!ignore) setCheckingActiveIncident(false);
-            }
+        const run = async () => {
+            if (ignore) return;
+            await loadAssignedIncidentView();
         };
 
-        checkMyActiveIncident();
+        run();
 
         return () => {
             ignore = true;
         };
-    }, [session?.user?.assignedIncident]);
+    }, [loadAssignedIncidentView]);
 
     useEffect(() => {
         if (enforceAssignedLock && hasActiveIncident) return;
         listIncidents({ page, limit: 10, severity, status });
     }, [enforceAssignedLock, hasActiveIncident, listIncidents, page, severity, status]);
+
+    const refreshIncidentsView = useCallback(() => {
+        loadAssignedIncidentView();
+        if (!enforceAssignedLock || !hasActiveIncident) {
+            listIncidents({ page, limit: 10, severity, status, _ts: Date.now() });
+        }
+    }, [
+        loadAssignedIncidentView,
+        enforceAssignedLock,
+        hasActiveIncident,
+        listIncidents,
+        page,
+        severity,
+        status,
+    ]);
+
+    useEffect(() => {
+        if (!socketToken) return;
+
+        connectSocket(socketToken);
+
+        const onIncidentChanged = () => {
+            refreshIncidentsView();
+        };
+
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentChanged);
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentChanged);
+
+        return () => {
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentChanged);
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentChanged);
+        };
+    }, [
+        socketToken,
+        refreshIncidentsView,
+    ]);
 
     const canGoPrev = useMemo(() => page > 1, [page]);
     const canGoNext = useMemo(() => page < (meta?.totalPages || 1), [page, meta?.totalPages]);

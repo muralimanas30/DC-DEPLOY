@@ -40,6 +40,7 @@ export default function useIncident() {
 
 			const res = await fetch(`/api/incidents?${search.toString()}`, {
 				method: "GET",
+				cache: "no-store",
 			});
 
 			const payload = await res.json();
@@ -69,6 +70,7 @@ export default function useIncident() {
 		try {
 			const res = await fetch(`/api/incidents/${incidentId}`, {
 				method: "GET",
+				cache: "no-store",
 			});
 			const payload = await res.json();
 

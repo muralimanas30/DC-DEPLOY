@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { connectSocket, getSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
+import { SOCKET_EVENTS } from "@/lib/realtime";
 
 function getIncidentCounts(incident) {
     const victims = Array.isArray(incident?.victims) ? incident.victims.length : 0;
@@ -97,6 +99,7 @@ export default function IncidentDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { data: session } = useSession();
+    const socketToken = session?.user?.token;
 
     const incidentId = useMemo(() => {
         const raw = params?.incidentId;
@@ -192,6 +195,49 @@ export default function IncidentDetailPage() {
     useEffect(() => {
         refreshAll();
     }, [refreshAll]);
+
+    useEffect(() => {
+        if (!socketToken || !incidentId) return;
+
+        const socket = connectSocket(socketToken);
+        if (!socket) return;
+
+        const watchIncident = () => {
+            socket.emit(SOCKET_EVENTS.INCIDENT_WATCH, { incidentId });
+        };
+
+        if (socket.connected) {
+            watchIncident();
+        }
+        socket.on("connect", watchIncident);
+
+        const onIncidentChanged = (payload = {}) => {
+            const changedId = payload?.incidentId ? String(payload.incidentId) : null;
+            if (!changedId || changedId !== incidentId) return;
+
+            refreshAll().then(() => {
+                if (showVolunteerPicker && isAdmin) {
+                    loadAvailableVolunteers().catch((err) => {
+                        setError(err?.message || "Failed to fetch volunteers");
+                    });
+                }
+            });
+        };
+
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentChanged);
+        subscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentChanged);
+
+        return () => {
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CHANGED, onIncidentChanged);
+            unsubscribeSocketEvent(SOCKET_EVENTS.INCIDENT_CLOSED, onIncidentChanged);
+            socket.off("connect", watchIncident);
+
+            const activeSocket = getSocket();
+            if (activeSocket && activeSocket.connected) {
+                activeSocket.emit(SOCKET_EVENTS.INCIDENT_UNWATCH, { incidentId });
+            }
+        };
+    }, [socketToken, incidentId, refreshAll, showVolunteerPicker, isAdmin, loadAvailableVolunteers]);
 
     useEffect(() => {
         if (!isAdmin || !isActiveIncident || !showVolunteerPicker) {

@@ -4,6 +4,7 @@ const { AppError } = require("../../errorHandler/errorHandler");
 const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
+const { emitIncidentChanged } = require("../../socket");
 
 const roleToField = {
     victim: "victims",
@@ -151,6 +152,15 @@ const joinIncident = async (req, res, next) => {
             await User.updateOne({ _id: me._id }, { $set: { assignedIncident: incident._id } });
         }
 
+        emitIncidentChanged({
+            type: "joined",
+            incident: normalizedIncident,
+            actorId: meId,
+            meta: {
+                autoClosedBecauseNoVictims,
+            },
+        });
+
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "Joined incident successfully",
@@ -186,6 +196,15 @@ const leaveIncident = async (req, res, next) => {
             { _id: me._id, assignedIncident: incident._id },
             { $set: { assignedIncident: null } }
         );
+
+        emitIncidentChanged({
+            type: "left",
+            incident: normalizedIncident,
+            actorId: meId,
+            meta: {
+                autoClosedBecauseNoVictims,
+            },
+        });
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
@@ -250,6 +269,16 @@ const assignUser = async (req, res, next) => {
             await User.updateOne({ _id: targetUser._id }, { $set: { assignedIncident: incident._id } });
         }
 
+        emitIncidentChanged({
+            type: "assigned",
+            incident: normalizedIncident,
+            actorId: meId,
+            meta: {
+                targetUserId: targetId,
+                autoClosedBecauseNoVictims,
+            },
+        });
+
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "User assigned to incident successfully",
@@ -294,6 +323,16 @@ const unassignUser = async (req, res, next) => {
             { _id: userId, assignedIncident: incident._id },
             { $set: { assignedIncident: null } }
         );
+
+        emitIncidentChanged({
+            type: "unassigned",
+            incident: normalizedIncident,
+            actorId: meId,
+            meta: {
+                targetUserId: userId,
+                autoClosedBecauseNoVictims,
+            },
+        });
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

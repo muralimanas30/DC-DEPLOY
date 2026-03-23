@@ -3,6 +3,7 @@ const { AppError } = require("../../errorHandler/errorHandler");
 const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
+const { emitIncidentChanged } = require("../../socket");
 
 const createIncident = async (req, res, next) => {
     try {
@@ -62,6 +63,12 @@ const createIncident = async (req, res, next) => {
             creator.assignedIncident = incident._id;
             await creator.save();
         }
+
+        emitIncidentChanged({
+            type: "created",
+            incident,
+            actorId: creatorId?.toString?.() || creatorId,
+        });
 
         return sendSuccess(res, {
             statusCode: StatusCodes.CREATED,

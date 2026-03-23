@@ -4,7 +4,6 @@ const morgan = require('morgan');
 const crypto = require('crypto');
 const { errorHandler } = require('./errorHandler/errorHandler');
 const routes = require('./routes');
-const http = require('http');
 
 const app = express();
 
