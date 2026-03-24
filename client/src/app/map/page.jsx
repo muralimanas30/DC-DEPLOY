@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import { connectSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
@@ -10,6 +10,27 @@ const LocationMap = dynamic(() => import("@/components/LocationMap"), { ssr: fal
 
 function toFixed(value) {
     return Number.isFinite(value) ? Number(value).toFixed(5) : "-";
+}
+
+function formatTimeAgo(value, nowMs) {
+    if (!value) return "unknown";
+
+    const parsed = new Date(value).getTime();
+    if (!Number.isFinite(parsed)) return "unknown";
+
+    const diffMs = Math.max(0, nowMs - parsed);
+    const seconds = Math.floor(diffMs / 1000);
+    if (seconds < 5) return "just now";
+    if (seconds < 60) return `${seconds}s ago`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
 }
 
 export default function MapPage() {
@@ -34,8 +55,7 @@ export default function MapPage() {
         admin: true,
     });
     const [liveParticipantLocations, setLiveParticipantLocations] = useState({});
-
-    const lastLocationPushAtRef = useRef(0);
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
     const loadMapFeed = useCallback(async () => {
         try {
@@ -102,28 +122,15 @@ export default function MapPage() {
     }, [assignedIncidentId]);
 
     useEffect(() => {
+        const id = setInterval(() => {
+            setNowMs(Date.now());
+        }, 10000);
+
+        return () => clearInterval(id);
+    }, []);
+
+    useEffect(() => {
         if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
-
-        const pushLocationToServer = async (lng, lat) => {
-            const now = Date.now();
-            if (now - lastLocationPushAtRef.current < 8000) return;
-            lastLocationPushAtRef.current = now;
-
-            try {
-                await fetch("/api/update", {
-                    method: "PATCH",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        currentLocation: { type: "Point", coordinates: [lng, lat] },
-                        isOnline: true,
-                        lastSeen: new Date().toISOString(),
-                    }),
-                });
-            } catch {
-            }
-        };
 
         const watchId = navigator.geolocation.watchPosition(
             (position) => {
@@ -132,7 +139,6 @@ export default function MapPage() {
                 if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
 
                 setSelfLiveLocation({ lng, lat });
-                pushLocationToServer(lng, lat);
             },
             () => {
             },
@@ -170,6 +176,8 @@ export default function MapPage() {
                     role: payload?.role || "victim",
                     isSelf: myUserId ? userId === myUserId : false,
                     isOnline: true,
+                    sharingState: "sharing",
+                    lastLocationAt: payload?.timestamp || new Date().toISOString(),
                     location: { lng, lat },
                 },
             }));
@@ -232,6 +240,8 @@ export default function MapPage() {
                 role: participant?.role || "victim",
                 hasLocation: Boolean(participant?.hasLocation),
                 isOnline: Boolean(participant?.isOnline),
+                sharingState: participant?.sharingState || (participant?.hasLocation ? "sharing" : "not_sharing"),
+                lastLocationAt: participant?.lastLocationAt || null,
                 isSelf,
             });
         });
@@ -254,6 +264,8 @@ export default function MapPage() {
                 hasLocation: true,
                 isSelf,
                 isOnline: Boolean(participant?.isOnline) || existing.isOnline,
+                sharingState: participant?.sharingState || "sharing",
+                lastLocationAt: participant?.lastLocationAt || existing.lastLocationAt || null,
             });
         });
 
@@ -275,6 +287,8 @@ export default function MapPage() {
                 hasLocation: true,
                 isSelf,
                 isOnline: Boolean(participant?.isOnline) || existing.isOnline,
+                sharingState: participant?.sharingState || "sharing",
+                lastLocationAt: participant?.lastLocationAt || existing.lastLocationAt || null,
             });
         });
 
@@ -355,6 +369,7 @@ export default function MapPage() {
                     lat: location.lat,
                     details: [
                         `Online: ${participant?.isOnline ? "yes" : "no"}`,
+                        `Last update: ${formatTimeAgo(participant?.lastLocationAt, nowMs)}`,
                         `Lng: ${toFixed(location.lng)}`,
                         `Lat: ${toFixed(location.lat)}`,
                     ],
@@ -393,7 +408,7 @@ export default function MapPage() {
         }
 
         return markers;
-    }, [isAssignedMode, feed, selfLiveLocation, liveParticipantLocations, myUserId]);
+    }, [isAssignedMode, feed, selfLiveLocation, liveParticipantLocations, myUserId, nowMs]);
 
     const visibleMarkers = useMemo(() => {
         return markerSet.filter((marker) => {
@@ -482,6 +497,7 @@ export default function MapPage() {
                                                 <span className="badge badge-success badge-xs"></span>
                                                 <span>{participant.name}</span>
                                                 <span className="text-base-content/60">({participant.role})</span>
+                                                <span className="text-base-content/50 text-xs">Updated {formatTimeAgo(participant.lastLocationAt, nowMs)}</span>
                                             </div>
                                         ))}
                                     </div>

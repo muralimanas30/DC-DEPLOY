@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../auth/[...nextauth]/route";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 function getErrorPayload(message) {
     return {
@@ -10,7 +11,7 @@ function getErrorPayload(message) {
 }
 
 function getBackendBaseUrl() {
-    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    return resolveBackendBaseUrl();
 }
 
 export async function GET(_request, { params }) {

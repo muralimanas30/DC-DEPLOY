@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "../auth/[...nextauth]/route";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 function getBackendUrl(pathname = "") {
-    const baseUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const baseUrl = resolveBackendBaseUrl();
     return `${baseUrl}${pathname}`;
 }
 

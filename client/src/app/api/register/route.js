@@ -1,13 +1,14 @@
 // app/api/register/route.js
 import { NextResponse } from "next/server";
 import axios from "axios";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 export async function POST(request) {
     const body = await request.json();
 
     try {
         const response = await axios.post(
-            `${process.env.BACKEND_URL}/api/auth/register`,
+            `${resolveBackendBaseUrl()}/api/auth/register`,
             body,
             { validateStatus: () => true }
         );

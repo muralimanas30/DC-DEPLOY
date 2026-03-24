@@ -43,6 +43,10 @@ const mapParticipant = (user, currentUserId) => {
     const isSelf = toStr(user._id) === toStr(currentUserId);
     const hasLocation = hasValidCoordinates(user.currentLocation);
     const [lng, lat] = hasLocation ? user.currentLocation.coordinates : [null, null];
+    const lastLocationAt = user?.lastSeen ? new Date(user.lastSeen).toISOString() : null;
+    const sharingState = hasLocation
+        ? (user?.isOnline ? "sharing" : "offline")
+        : "not_sharing";
 
     return {
         id: toStr(user._id),
@@ -51,6 +55,8 @@ const mapParticipant = (user, currentUserId) => {
         isSelf,
         isOnline: Boolean(user.isOnline),
         hasLocation,
+        sharingState,
+        lastLocationAt,
         location: hasLocation ? { lng, lat } : null,
     };
 };
@@ -59,14 +65,14 @@ const getCurrentUser = async (req) => {
     const rawUserId = req.user?.id || req.user?._id || req.userId;
 
     const byId = (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId))
-        ? await User.findById(rawUserId).select("_id name email activeRole assignedIncident currentLocation isOnline")
+        ? await User.findById(rawUserId).select("_id name email activeRole assignedIncident currentLocation isOnline lastSeen")
         : null;
 
     if (byId) return byId;
 
     if (req.user?.email) {
         return User.findOne({ email: req.user.email })
-            .select("_id name email activeRole assignedIncident currentLocation isOnline");
+            .select("_id name email activeRole assignedIncident currentLocation isOnline lastSeen");
     }
 
     return null;
@@ -93,6 +99,7 @@ const getIncidentMapFeed = async (req, res, next) => {
         let assignedIncidentSummary = null;
         let incidentLocation = null;
         let selfLocation = null;
+        let selfLocationAt = null;
         let participantLocations = [];
         let participants = [];
 
@@ -110,6 +117,7 @@ const getIncidentMapFeed = async (req, res, next) => {
                 if (hasValidCoordinates(currentUser.currentLocation)) {
                     const [lng, lat] = currentUser.currentLocation.coordinates;
                     selfLocation = { lng, lat };
+                    selfLocationAt = currentUser?.lastSeen ? new Date(currentUser.lastSeen).toISOString() : null;
                 }
 
                 const participantIds = [
@@ -119,7 +127,7 @@ const getIncidentMapFeed = async (req, res, next) => {
                 ];
 
                 const users = await User.find({ _id: { $in: participantIds } })
-                    .select("_id name email activeRole currentLocation isOnline")
+                    .select("_id name email activeRole currentLocation isOnline lastSeen")
                     .lean();
 
                 participants = users
@@ -133,6 +141,8 @@ const getIncidentMapFeed = async (req, res, next) => {
                         role: participant.role,
                         isSelf: participant.isSelf,
                         isOnline: participant.isOnline,
+                        sharingState: participant.sharingState,
+                        lastLocationAt: participant.lastLocationAt,
                         location: participant.location,
                     }));
             }
@@ -148,8 +158,13 @@ const getIncidentMapFeed = async (req, res, next) => {
                 tracked: {
                     incidentLocation,
                     selfLocation,
+                    selfLocationAt,
                     participants: participantLocations,
                     allParticipants: participants,
+                    meta: {
+                        source: "map-feed",
+                        generatedAt: new Date().toISOString(),
+                    },
                 },
             },
         });

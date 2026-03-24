@@ -2,13 +2,14 @@ import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import axios from "axios";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 function unwrapPayload(responseData) {
     return responseData?.data ?? responseData;
 }
 
 function getBackendBaseUrl() {
-    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    return resolveBackendBaseUrl();
 }
 
 async function getUser(credentials) {

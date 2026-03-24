@@ -123,9 +123,9 @@ export default function Navbar() {
         if (!socketToken) return;
         if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
 
-        const pushCurrentLocation = async (lng, lat) => {
+        const pushCurrentLocation = async (lng, lat, force = false) => {
             const now = Date.now();
-            if (now - lastLocationUploadAtRef.current < 10000) return;
+            if (!force && (now - lastLocationUploadAtRef.current < 10000)) return;
             lastLocationUploadAtRef.current = now;
 
             const activeSocket = getSocket();
@@ -153,6 +153,30 @@ export default function Navbar() {
             }
         };
 
+        const syncCurrentPositionNow = () => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lng = Number(position?.coords?.longitude);
+                    const lat = Number(position?.coords?.latitude);
+                    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+                    pushCurrentLocation(lng, lat, true);
+                },
+                () => {
+                },
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+            );
+        };
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                syncCurrentPositionNow();
+            }
+        };
+
+        const onWindowFocus = () => {
+            syncCurrentPositionNow();
+        };
+
         const watchId = navigator.geolocation.watchPosition(
             (position) => {
                 const lng = Number(position?.coords?.longitude);
@@ -166,8 +190,15 @@ export default function Navbar() {
             { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
         );
 
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("focus", onWindowFocus);
+        window.addEventListener("pageshow", onWindowFocus);
+
         return () => {
             navigator.geolocation.clearWatch(watchId);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("focus", onWindowFocus);
+            window.removeEventListener("pageshow", onWindowFocus);
         };
     }, [session?.user?.token, assignedIncidentId]);
 

@@ -1,11 +1,12 @@
 import { io } from "socket.io-client";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 // Singleton socket instance and listeners
 let socket = null;
 const listeners = {};
 
 const getSocketBaseUrl = () => {
-    return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    return resolveBackendBaseUrl();
 };
 
 /**
@@ -33,14 +34,9 @@ export function connectSocket(token) {
             });
         });
 
-        socket.on("connect", () => {
-        });
-
-        socket.on("connect_error", (err) => {
-        });
-
-        socket.on("disconnect", (reason) => {
-        });
+        socket.on("connect", () => {});
+        socket.on("connect_error", () => {});
+        socket.on("disconnect", () => {});
 
         socket.connect();
         return socket;

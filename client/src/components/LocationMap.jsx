@@ -2,6 +2,7 @@
 import PropTypes from "prop-types";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import MarkerClusterGroup from "react-leaflet-markercluster";
 
 function normalizeCenter(markers, center) {
     if (center && Number.isFinite(center.lng) && Number.isFinite(center.lat)) {
@@ -135,35 +136,42 @@ export default function LocationMap({ markers = [], center }) {
                 />
                 <FitBounds markers={displayMarkers} />
 
-                {displayMarkers.map((marker, index) => (
-                    <Marker
-                        key={marker.id || `${marker.type || "m"}:${marker.lat}:${marker.lng}:${index}`}
-                        position={[marker.renderLat, marker.renderLng]}
-                        icon={createMarkerIcon(marker.type)}
-                    >
-                        <Popup>
-                            <div className="min-w-55 space-y-1">
-                                <div className="font-semibold text-sm">{marker.title || marker.label || "Map marker"}</div>
-                                {marker.label ? <div className="text-xs opacity-80">{marker.label}</div> : null}
-                                {marker.overlapCount > 1 ? (
-                                    <div className="text-xs badge badge-outline">Overlapping markers: {marker.overlapCount}</div>
-                                ) : null}
-                                {Array.isArray(marker.details) && marker.details.length > 0 ? (
-                                    <ul className="text-xs opacity-80 list-disc list-inside">
-                                        {marker.details.map((item) => (
-                                            <li key={item}>{item}</li>
-                                        ))}
-                                    </ul>
-                                ) : null}
-                                {marker.href ? (
-                                    <a className="link link-primary text-xs" href={marker.href}>
-                                        Open details
-                                    </a>
-                                ) : null}
-                            </div>
-                        </Popup>
-                    </Marker>
-                ))}
+                <MarkerClusterGroup
+                    showCoverageOnHover={false}
+                    spiderfyOnMaxZoom
+                    removeOutsideVisibleBounds
+                    disableClusteringAtZoom={17}
+                >
+                    {displayMarkers.map((marker, index) => (
+                        <Marker
+                            key={marker.id || `${marker.type || "m"}:${marker.lat}:${marker.lng}:${index}`}
+                            position={[marker.renderLat, marker.renderLng]}
+                            icon={createMarkerIcon(marker.type)}
+                        >
+                            <Popup>
+                                <div className="min-w-55 space-y-1">
+                                    <div className="font-semibold text-sm">{marker.title || marker.label || "Map marker"}</div>
+                                    {marker.label ? <div className="text-xs opacity-80">{marker.label}</div> : null}
+                                    {marker.overlapCount > 1 ? (
+                                        <div className="text-xs badge badge-outline">Overlapping markers: {marker.overlapCount}</div>
+                                    ) : null}
+                                    {Array.isArray(marker.details) && marker.details.length > 0 ? (
+                                        <ul className="text-xs opacity-80 list-disc list-inside">
+                                            {marker.details.map((item) => (
+                                                <li key={item}>{item}</li>
+                                            ))}
+                                        </ul>
+                                    ) : null}
+                                    {marker.href ? (
+                                        <a className="link link-primary text-xs" href={marker.href}>
+                                            Open details
+                                        </a>
+                                    ) : null}
+                                </div>
+                            </Popup>
+                        </Marker>
+                    ))}
+                </MarkerClusterGroup>
             </MapContainer>
         </div>
     );

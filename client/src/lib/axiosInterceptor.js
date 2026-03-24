@@ -1,7 +1,8 @@
 import axios from "axios";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 const instance = axios.create({
-    baseURL: process.env.BACKEND_URL,
+    baseURL: resolveBackendBaseUrl(),
     headers: {
         "Content-Type": "application/json",
     },

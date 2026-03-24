@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../auth/[...nextauth]/route";
+import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
 function getBackendBaseUrl() {
-    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    return resolveBackendBaseUrl();
 }
 
 function hasValidCoordinates(geo) {
@@ -45,6 +46,10 @@ function mapParticipant(user = {}, currentUserId = null) {
     const hasLocation = Number.isFinite(lng) && Number.isFinite(lat);
     const userId = user?._id || user?.id || null;
     const isSelf = Boolean(currentUserId) && Boolean(userId) && String(currentUserId) === String(userId);
+    const lastLocationAt = user?.lastSeen ? new Date(user.lastSeen).toISOString() : null;
+    const sharingState = hasLocation
+        ? (Boolean(user?.isOnline) ? "sharing" : "offline")
+        : "not_sharing";
 
     return {
         id: userId,
@@ -53,6 +58,8 @@ function mapParticipant(user = {}, currentUserId = null) {
         isSelf,
         isOnline: Boolean(user?.isOnline),
         hasLocation,
+        sharingState,
+        lastLocationAt,
         location: hasLocation ? { lng, lat } : null,
     };
 }
@@ -118,6 +125,8 @@ async function fetchFallbackMapFeed(token, currentUserId = null) {
                     role: participant.role,
                     isSelf: participant.isSelf,
                     isOnline: participant.isOnline,
+                    sharingState: participant.sharingState,
+                    lastLocationAt: participant.lastLocationAt,
                     location: participant.location,
                 }));
         }
@@ -130,8 +139,13 @@ async function fetchFallbackMapFeed(token, currentUserId = null) {
         tracked: {
             incidentLocation: assignedIncident?.location || null,
             selfLocation: null,
+            selfLocationAt: null,
             participants: participantLocations,
             allParticipants,
+            meta: {
+                source: "fallback",
+                generatedAt: new Date().toISOString(),
+            },
         },
     };
 }

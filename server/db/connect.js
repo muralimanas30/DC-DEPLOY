@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { MONGO_URI } = require('../config');
+const { NODE_ENV } = require('../config');
 
 const connectDB = async () => {
     if (!MONGO_URI) {
@@ -7,7 +8,9 @@ const connectDB = async () => {
     }
 
     await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
-    console.log("[DB] CONNECTED:", mongoose.connection.host);
+    if (NODE_ENV !== 'production') {
+        console.log("[DB] CONNECTED:", mongoose.connection.host);
+    }
     return mongoose.connection;
 };
 

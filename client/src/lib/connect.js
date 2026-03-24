@@ -7,7 +7,9 @@ const connectDB = async () => {
     if(mongoose.connection.readyState===1)
         return mongoose
     await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
-    console.log("[DB] CONNECTED:", mongoose.connection.host);
+    if (process.env.NODE_ENV !== "production") {
+        console.log("[DB] CONNECTED:", mongoose.connection.host);
+    }
     return mongoose.connection;
 };
 
