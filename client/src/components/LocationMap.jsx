@@ -36,6 +36,60 @@ function createMarkerIcon(type) {
     });
 }
 
+function spreadOverlappingMarkers(markers) {
+    const groups = new Map();
+
+    markers.forEach((marker, index) => {
+        const key = `${marker.lat.toFixed(6)}:${marker.lng.toFixed(6)}`;
+        const list = groups.get(key) || [];
+        list.push({ marker, index });
+        groups.set(key, list);
+    });
+
+    const result = [];
+
+    groups.forEach((entries) => {
+        if (entries.length === 1) {
+            const item = entries[0].marker;
+            result.push({
+                ...item,
+                renderLat: item.lat,
+                renderLng: item.lng,
+                overlapCount: 1,
+            });
+            return;
+        }
+
+        const incidentAnchorIndex = entries.findIndex((entry) => entry.marker.type === "incident");
+        const anchorEntry = incidentAnchorIndex >= 0 ? entries[incidentAnchorIndex] : null;
+        const spreadEntries = anchorEntry
+            ? entries.filter((_, idx) => idx !== incidentAnchorIndex)
+            : entries;
+
+        if (anchorEntry) {
+            result.push({
+                ...anchorEntry.marker,
+                renderLat: anchorEntry.marker.lat,
+                renderLng: anchorEntry.marker.lng,
+                overlapCount: entries.length,
+            });
+        }
+
+        const radius = 0.00018;
+        spreadEntries.forEach((entry, idx) => {
+            const angle = (2 * Math.PI * idx) / Math.max(1, spreadEntries.length);
+            result.push({
+                ...entry.marker,
+                renderLat: entry.marker.lat + (radius * Math.sin(angle)),
+                renderLng: entry.marker.lng + (radius * Math.cos(angle)),
+                overlapCount: entries.length,
+            });
+        });
+    });
+
+    return result;
+}
+
 function FitBounds({ markers }) {
     const map = useMap();
 
@@ -69,7 +123,8 @@ function FitBounds({ markers }) {
  */
 export default function LocationMap({ markers = [], center }) {
     const validMarkers = markers.filter((marker) => Number.isFinite(marker?.lat) && Number.isFinite(marker?.lng));
-    const mapCenter = normalizeCenter(validMarkers, center);
+    const displayMarkers = spreadOverlappingMarkers(validMarkers);
+    const mapCenter = normalizeCenter(displayMarkers, center);
 
     return (
         <div className="w-full h-[70vh] overflow-hidden rounded-xl border border-base-300">
@@ -78,18 +133,21 @@ export default function LocationMap({ markers = [], center }) {
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <FitBounds markers={validMarkers} />
+                <FitBounds markers={displayMarkers} />
 
-                {validMarkers.map((marker, index) => (
+                {displayMarkers.map((marker, index) => (
                     <Marker
                         key={marker.id || `${marker.type || "m"}:${marker.lat}:${marker.lng}:${index}`}
-                        position={[marker.lat, marker.lng]}
+                        position={[marker.renderLat, marker.renderLng]}
                         icon={createMarkerIcon(marker.type)}
                     >
                         <Popup>
                             <div className="min-w-55 space-y-1">
                                 <div className="font-semibold text-sm">{marker.title || marker.label || "Map marker"}</div>
                                 {marker.label ? <div className="text-xs opacity-80">{marker.label}</div> : null}
+                                {marker.overlapCount > 1 ? (
+                                    <div className="text-xs badge badge-outline">Overlapping markers: {marker.overlapCount}</div>
+                                ) : null}
                                 {Array.isArray(marker.details) && marker.details.length > 0 ? (
                                     <ul className="text-xs opacity-80 list-disc list-inside">
                                         {marker.details.map((item) => (

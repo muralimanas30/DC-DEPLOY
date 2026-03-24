@@ -38,24 +38,26 @@ function mapIncident(incident = {}) {
     };
 }
 
-function mapParticipant(user = {}) {
+function mapParticipant(user = {}, currentUserId = null) {
     const coordinates = user?.currentLocation?.coordinates || [];
     const lng = Number(coordinates[0]);
     const lat = Number(coordinates[1]);
-
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    const hasLocation = Number.isFinite(lng) && Number.isFinite(lat);
+    const userId = user?._id || user?.id || null;
+    const isSelf = Boolean(currentUserId) && Boolean(userId) && String(currentUserId) === String(userId);
 
     return {
-        id: user?._id || user?.id || null,
+        id: userId,
         name: user?.name || user?.email || "Responder",
         role: user?.activeRole || "victim",
-        isSelf: false,
+        isSelf,
         isOnline: Boolean(user?.isOnline),
-        location: { lng, lat },
+        hasLocation,
+        location: hasLocation ? { lng, lat } : null,
     };
 }
 
-async function fetchFallbackMapFeed(token) {
+async function fetchFallbackMapFeed(token, currentUserId = null) {
     const headers = { Authorization: `Bearer ${token}` };
     const base = getBackendBaseUrl();
 
@@ -91,6 +93,7 @@ async function fetchFallbackMapFeed(token) {
         : null;
 
     let participantLocations = [];
+    let allParticipants = [];
     if (assignedIncident?.id) {
         const participantsRes = await fetch(`${base}/api/incidents/${assignedIncident.id}/participants`, {
             method: "GET",
@@ -101,11 +104,22 @@ async function fetchFallbackMapFeed(token) {
         if (participantsRes.ok) {
             const participantsPayload = await participantsRes.json();
             const participants = participantsPayload?.data?.participants || {};
-            participantLocations = [
+            allParticipants = [
                 ...(participants.victims || []),
                 ...(participants.volunteers || []),
                 ...(participants.admins || []),
-            ].map(mapParticipant).filter(Boolean);
+            ].map((participant) => mapParticipant(participant, currentUserId)).filter(Boolean);
+
+            participantLocations = allParticipants
+                .filter((participant) => participant.hasLocation)
+                .map((participant) => ({
+                    id: participant.id,
+                    name: participant.name,
+                    role: participant.role,
+                    isSelf: participant.isSelf,
+                    isOnline: participant.isOnline,
+                    location: participant.location,
+                }));
         }
     }
 
@@ -117,6 +131,7 @@ async function fetchFallbackMapFeed(token) {
             incidentLocation: assignedIncident?.location || null,
             selfLocation: null,
             participants: participantLocations,
+            allParticipants,
         },
     };
 }
@@ -149,7 +164,7 @@ export async function GET() {
         const payload = await response.json();
 
         if (!response.ok && payload?.code === "INVALID_INCIDENT_ID") {
-            const fallback = await fetchFallbackMapFeed(token);
+            const fallback = await fetchFallbackMapFeed(token, session?.user?.id || null);
             return NextResponse.json(
                 {
                     status: "success",
@@ -164,7 +179,7 @@ export async function GET() {
         return NextResponse.json(payload, { status: payload?.statusCode || response.status });
     } catch {
         try {
-            const fallback = await fetchFallbackMapFeed(token);
+            const fallback = await fetchFallbackMapFeed(token, session?.user?.id || null);
             return NextResponse.json(
                 {
                     status: "success",

@@ -63,8 +63,16 @@ export default function IncidentsPage() {
     const hasLiveLocation = hasValidPointLocation(currentLocation);
 
     const [page, setPage] = useState(1);
-    const [severity, setSeverity] = useState("");
-    const [status, setStatus] = useState("");
+    const [severity, setSeverity] = useState(() => {
+        if (typeof window === "undefined") return "";
+        const value = window.localStorage.getItem("incidents:severity");
+        return value || "";
+    });
+    const [status, setStatus] = useState(() => {
+        if (typeof window === "undefined") return "";
+        const value = window.localStorage.getItem("incidents:status");
+        return value || "";
+    });
     const [form, setForm] = useState({
         title: "",
         description: "",
@@ -125,6 +133,16 @@ export default function IncidentsPage() {
         if (enforceAssignedLock && hasActiveIncident) return;
         listIncidents({ page, limit: 10, severity, status });
     }, [enforceAssignedLock, hasActiveIncident, listIncidents, page, severity, status]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        window.localStorage.setItem("incidents:severity", severity);
+    }, [severity]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        window.localStorage.setItem("incidents:status", status);
+    }, [status]);
 
     const refreshIncidentsView = useCallback(() => {
         loadAssignedIncidentView();

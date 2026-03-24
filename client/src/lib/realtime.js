@@ -7,4 +7,6 @@ export const SOCKET_EVENTS = {
     INCIDENT_ALERT_ERROR: "incidentAlert:error",
     INCIDENT_CHAT_MESSAGE: "incident:chat-message",
     SEND_ALERT: "sendAlert",
+    CLIENT_LOCATION_UPDATE: "location:update",
+    PARTICIPANT_LOCATION_UPDATE: "incident:participant-location",
 };

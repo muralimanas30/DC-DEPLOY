@@ -39,11 +39,10 @@ const mapIncident = (incident) => {
 };
 
 const mapParticipant = (user, currentUserId) => {
-    if (!hasValidCoordinates(user.currentLocation)) return null;
-
-    const [lng, lat] = user.currentLocation.coordinates;
     const role = user.activeRole || "victim";
     const isSelf = toStr(user._id) === toStr(currentUserId);
+    const hasLocation = hasValidCoordinates(user.currentLocation);
+    const [lng, lat] = hasLocation ? user.currentLocation.coordinates : [null, null];
 
     return {
         id: toStr(user._id),
@@ -51,7 +50,8 @@ const mapParticipant = (user, currentUserId) => {
         role,
         isSelf,
         isOnline: Boolean(user.isOnline),
-        location: { lng, lat },
+        hasLocation,
+        location: hasLocation ? { lng, lat } : null,
     };
 };
 
@@ -94,6 +94,7 @@ const getIncidentMapFeed = async (req, res, next) => {
         let incidentLocation = null;
         let selfLocation = null;
         let participantLocations = [];
+        let participants = [];
 
         const assignedIncidentId = currentUser.assignedIncident ? toStr(currentUser.assignedIncident) : null;
         if (assignedIncidentId && mongoose.Types.ObjectId.isValid(assignedIncidentId)) {
@@ -121,9 +122,19 @@ const getIncidentMapFeed = async (req, res, next) => {
                     .select("_id name email activeRole currentLocation isOnline")
                     .lean();
 
-                participantLocations = users
-                    .map((user) => mapParticipant(user, currentUser._id))
-                    .filter(Boolean);
+                participants = users
+                    .map((user) => mapParticipant(user, currentUser._id));
+
+                participantLocations = participants
+                    .filter((participant) => participant.hasLocation)
+                    .map((participant) => ({
+                        id: participant.id,
+                        name: participant.name,
+                        role: participant.role,
+                        isSelf: participant.isSelf,
+                        isOnline: participant.isOnline,
+                        location: participant.location,
+                    }));
             }
         }
 
@@ -138,6 +149,7 @@ const getIncidentMapFeed = async (req, res, next) => {
                     incidentLocation,
                     selfLocation,
                     participants: participantLocations,
+                    allParticipants: participants,
                 },
             },
         });

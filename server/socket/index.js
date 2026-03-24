@@ -13,6 +13,8 @@ const SOCKET_EVENTS = {
     INCIDENT_ALERT_ERROR: "incidentAlert:error",
     INCIDENT_CHAT_MESSAGE: "incident:chat-message",
     SEND_ALERT: "sendAlert",
+    CLIENT_LOCATION_UPDATE: "location:update",
+    PARTICIPANT_LOCATION_UPDATE: "incident:participant-location",
 };
 
 const ROOMS = {
@@ -191,6 +193,45 @@ const initSocket = (httpServer) => {
             const incidentId = payload?.incidentId ? String(payload.incidentId) : null;
             if (!incidentId) return;
             socket.leave(ROOMS.incident(incidentId));
+        });
+
+        socket.on(SOCKET_EVENTS.CLIENT_LOCATION_UPDATE, async (payload = {}) => {
+            const lng = Number(payload?.lng ?? payload?.location?.lng);
+            const lat = Number(payload?.lat ?? payload?.location?.lat);
+
+            if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+            if (Math.abs(lng) > 180 || Math.abs(lat) > 90) return;
+
+            await User.updateOne(
+                { _id: user.id },
+                {
+                    $set: {
+                        currentLocation: { type: "Point", coordinates: [lng, lat] },
+                        isOnline: true,
+                        lastSeen: new Date(),
+                    },
+                }
+            );
+
+            const candidateIncidentId = payload?.incidentId ? String(payload.incidentId) : null;
+            const targetIncidentId = candidateIncidentId || user.assignedIncident || null;
+            if (!targetIncidentId) return;
+
+            const incident = await Incident.findById(targetIncidentId)
+                .select("status creatorId victims volunteers admins")
+                .lean();
+
+            if (!incident || incident.status !== "active") return;
+            if (!canAccessIncidentRoom(incident, user)) return;
+
+            ioInstance.to(ROOMS.incident(targetIncidentId)).emit(SOCKET_EVENTS.PARTICIPANT_LOCATION_UPDATE, {
+                incidentId: targetIncidentId,
+                userId: user.id,
+                name: user.name || user.email || "Responder",
+                role: user.activeRole || "victim",
+                location: { lng, lat },
+                timestamp: new Date().toISOString(),
+            });
         });
 
         socket.on(SOCKET_EVENTS.SEND_ALERT, async (payload = {}) => {

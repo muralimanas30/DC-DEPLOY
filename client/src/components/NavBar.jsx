@@ -128,6 +128,15 @@ export default function Navbar() {
             if (now - lastLocationUploadAtRef.current < 10000) return;
             lastLocationUploadAtRef.current = now;
 
+            const activeSocket = getSocket();
+            if (activeSocket && activeSocket.connected) {
+                activeSocket.emit(SOCKET_EVENTS.CLIENT_LOCATION_UPDATE, {
+                    lng,
+                    lat,
+                    incidentId: assignedIncidentId || null,
+                });
+            }
+
             try {
                 await fetch("/api/update", {
                     method: "PATCH",
@@ -160,7 +169,7 @@ export default function Navbar() {
         return () => {
             navigator.geolocation.clearWatch(watchId);
         };
-    }, [session?.user?.token]);
+    }, [session?.user?.token, assignedIncidentId]);
 
     const getChatHref = () => {
         if (!assignedIncidentId) return null;
