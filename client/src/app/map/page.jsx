@@ -541,7 +541,11 @@ export default function MapPage() {
                     </div>
                 </section>
             ) : (
-                <LocationMap markers={visibleMarkers} />
+                <LocationMap
+                    markers={visibleMarkers}
+                    center={selfLiveLocation || feed?.tracked?.selfLocation || null}
+                    origin={selfLiveLocation || feed?.tracked?.selfLocation || null}
+                />
             )}
         </div>
     );

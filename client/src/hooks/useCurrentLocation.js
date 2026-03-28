@@ -2,19 +2,24 @@ import { useEffect, useState } from "react";
 
 export default function useCurrentLocation() {
     const [location, setLocation] = useState(null);
-    const [error, setError] = useState(() => {
-        if (typeof navigator === "undefined") return null;
-        return "geolocation" in navigator ? null : "Geolocation not supported";
-    });
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (typeof navigator === "undefined") {
+        if (typeof window === "undefined" || typeof navigator === "undefined") {
+            return;
+        }
+
+        if (!window.isSecureContext) {
+            setError("Location requires HTTPS (or localhost). Continue without location or use a secure URL.");
             return;
         }
 
         if (!("geolocation" in navigator)) {
+            setError("Geolocation not supported on this device/browser");
             return;
         }
+
+        setError(null);
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -22,8 +27,12 @@ export default function useCurrentLocation() {
                     type: "Point",
                     coordinates: [pos.coords.longitude, pos.coords.latitude]
                 });
+                setError(null);
             },
-            (err) => setError(err.message),
+            (err) => {
+                const message = err?.message || "Unable to access location";
+                setError(message);
+            },
             { enableHighAccuracy: true }
         );
     }, []);

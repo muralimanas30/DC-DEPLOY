@@ -7,10 +7,10 @@ const connectDB = async () => {
         throw new Error("Missing MONGO_URI in server/config");
     }
 
+    console.log('[DB] Connecting to MongoDB...');
+
     await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
-    if (NODE_ENV !== 'production') {
-        console.log("[DB] CONNECTED:", mongoose.connection.host);
-    }
+    console.log("[DB] ✓ Connected to MongoDB at", mongoose.connection.host);
     return mongoose.connection;
 };
 

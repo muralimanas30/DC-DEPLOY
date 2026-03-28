@@ -6,9 +6,11 @@ import { useSession } from "next-auth/react";
 export default function ProfilePage() {
     const { data: session, status, update } = useSession();
     const [activeRole, setActiveRole] = useState("");
+    const [phoneInput, setPhoneInput] = useState("");
     const [skillInput, setSkillInput] = useState("");
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [clearDbLoading, setClearDbLoading] = useState(false);
     const [message, setMessage] = useState("");
     const [error, setError] = useState("");
 
@@ -18,11 +20,16 @@ export default function ProfilePage() {
     const currentRole = user?.activeRole || user?.role || "victim";
     const selectedRole = activeRole || currentRole;
     const isAssignedToIncident = Boolean(user?.assignedIncident);
+    const isAdminUser = Boolean(currentRole === "admin" || (Array.isArray(user?.roles) && user.roles.includes("admin")));
 
     useEffect(() => {
         const initialSkills = Array.isArray(user?.skills) ? user.skills : [];
         setSkills(initialSkills);
     }, [user?.skills]);
+
+    useEffect(() => {
+        setPhoneInput(String(user?.phone || ""));
+    }, [user?.phone]);
 
     const addSkill = () => {
         const next = String(skillInput || "").trim();
@@ -118,6 +125,96 @@ export default function ProfilePage() {
         }
     };
 
+    const onSavePhone = async (event) => {
+        event.preventDefault();
+        setError("");
+        setMessage("");
+
+        const normalizedInput = String(phoneInput || "").trim();
+        const existingPhone = String(user?.phone || "").trim();
+        if (normalizedInput === existingPhone) {
+            setMessage("No phone changes to save");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await fetch("/api/update", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    phone: normalizedInput || null,
+                }),
+            });
+
+            const payload = await res.json();
+            if (!res.ok || payload?.status !== "success") {
+                throw new Error(payload?.msg || "Failed to update phone number");
+            }
+
+            const updatedPhone = payload?.data?.user?.phone ?? null;
+
+            await update({
+                phone: updatedPhone,
+                activeRole: payload?.data?.user?.activeRole || currentRole,
+                role: payload?.data?.user?.activeRole || currentRole,
+                roles: payload?.data?.user?.roles || user?.roles || allRoles,
+                assignedIncident: payload?.data?.user?.assignedIncident ?? user?.assignedIncident ?? null,
+            });
+
+            setPhoneInput(String(updatedPhone || ""));
+            setMessage("Phone number synced successfully");
+        } catch (err) {
+            setError(err?.message || "Failed to update phone number");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const onClearDatabase = async () => {
+        setError("");
+        setMessage("");
+
+        const typedConfirmation = window.prompt(
+            "This will permanently remove incidents, message logs, and non-admin users. Type CLEAR_DB to continue."
+        );
+
+        if (typedConfirmation === null) return;
+
+        if (String(typedConfirmation).trim().toUpperCase() !== "CLEAR_DB") {
+            setError("Confirmation text did not match. Database clear cancelled.");
+            return;
+        }
+
+        const finalConfirm = window.confirm("Final confirmation: clear database now?");
+        if (!finalConfirm) return;
+
+        setClearDbLoading(true);
+        try {
+            const res = await fetch("/api/admin/clear-db", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ confirmation: "CLEAR_DB" }),
+            });
+
+            const payload = await res.json();
+            if (!res.ok || payload?.status !== "success") {
+                throw new Error(payload?.msg || "Failed to clear database");
+            }
+
+            await update({ assignedIncident: null });
+            setMessage(payload?.msg || "Database cleared successfully");
+        } catch (err) {
+            setError(err?.message || "Failed to clear database");
+        } finally {
+            setClearDbLoading(false);
+        }
+    };
+
     if (status === "loading") {
         return (
             <div className="container mx-auto px-4 py-8">
@@ -165,6 +262,27 @@ export default function ProfilePage() {
                             <input className="input input-bordered" value={user?.email || ""} readOnly />
                         </label>
                     </div>
+
+                    <form className="space-y-3" onSubmit={onSavePhone}>
+                        <label className="form-control">
+                            <span className="label-text">Phone Number</span>
+                            <input
+                                className="input input-bordered"
+                                value={phoneInput}
+                                onChange={(event) => setPhoneInput(event.target.value)}
+                                placeholder="+919876543210"
+                                disabled={loading || clearDbLoading}
+                            />
+                        </label>
+
+                        <button
+                            type="submit"
+                            className="btn btn-outline"
+                            disabled={loading || clearDbLoading}
+                        >
+                            {loading ? "Saving..." : "Save Phone"}
+                        </button>
+                    </form>
 
                     <div>
                         <div className="text-sm font-medium mb-2">Available Roles</div>
@@ -260,11 +378,32 @@ export default function ProfilePage() {
                             type="button"
                             className="btn btn-secondary"
                             onClick={saveSkills}
-                            disabled={loading}
+                            disabled={loading || clearDbLoading}
                         >
                             {loading ? "Saving..." : "Save Skills"}
                         </button>
                     </div>
+
+                    {isAdminUser && (
+                        <div className="space-y-3 border border-error/30 rounded-xl p-4 bg-error/5">
+                            <div className="text-sm font-semibold text-error">Admin Controls</div>
+                            <p className="text-sm text-base-content/70">
+                                Clear the database to start fresh. This removes incidents, incident messages, SMS/Telegram logs,
+                                and all non-admin users. Admin users are preserved.
+                            </p>
+                            <button
+                                type="button"
+                                className="btn btn-error"
+                                onClick={onClearDatabase}
+                                disabled={loading || clearDbLoading}
+                            >
+                                {clearDbLoading ? "Clearing Database..." : "Clear Database"}
+                            </button>
+                            <p className="text-xs text-base-content/60">
+                                This action resets data only. It does not recompile or rebuild frontend/backend code.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </section>
         </div>

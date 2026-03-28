@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import Breadcrumbs from "./Breadcrumbs";
 import { connectSocket, getSocket, subscribeSocketEvent, unsubscribeSocketEvent } from "@/hooks/useSocket";
 import { SOCKET_EVENTS } from "@/lib/realtime";
+import useOfflineMode from "@/hooks/useOfflineMode";
 
 export default function Navbar() {
     const { data: session } = useSession();
@@ -36,7 +37,19 @@ export default function Navbar() {
         return withoutQuery;
     }, [pathname]);
 
+    const activeRole = session?.user?.activeRole || session?.user?.role || "guest";
+    const firstName = (session?.user?.name || "Guest").trim().split(/\s+/)[0];
+    const isVictimRole = activeRole === "victim";
+    const canUseOfflineMode = !session?.user || isVictimRole;
+    const { isOfflineMode, setOfflineMode } = useOfflineMode();
+
     const assignedIncidentId = session?.user?.token ? liveAssignedIncidentId : null;
+
+    useEffect(() => {
+        if (session?.user && !isVictimRole && isOfflineMode) {
+            setOfflineMode(false);
+        }
+    }, [session?.user, isVictimRole, isOfflineMode, setOfflineMode]);
 
     useEffect(() => {
         const socketToken = session?.user?.token;
@@ -121,6 +134,7 @@ export default function Navbar() {
     useEffect(() => {
         const socketToken = session?.user?.token;
         if (!socketToken) return;
+        if (typeof window !== "undefined" && !window.isSecureContext) return;
         if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
 
         const pushCurrentLocation = async (lng, lat, force = false) => {
@@ -208,16 +222,17 @@ export default function Navbar() {
     };
 
     const navLinks = session?.user
-        ? [
-            { href: "/incidents", label: "Incidents" },
-            { href: "/map", label: "Map" },
-            ...(assignedIncidentId ? [{ href: getChatHref(), label: "Chat" }] : []),
-            { href: "/profile", label: "Profile" },
-        ]
-        : [];
-
-    const activeRole = session?.user?.activeRole || session?.user?.role || "guest";
-    const firstName = (session?.user?.name || "Guest").trim().split(/\s+/)[0];
+        ? (
+            isVictimRole && isOfflineMode
+                ? [{ href: "/offline-report", label: "Offline Report" }]
+                : [
+                    { href: "/incidents", label: "Incidents" },
+                    { href: "/map", label: "Map" },
+                    ...(assignedIncidentId ? [{ href: getChatHref(), label: "Chat" }] : []),
+                    { href: "/profile", label: "Profile" },
+                ]
+        )
+                : [{ href: "/offline-report", label: "Offline Report" }];
 
     const getRoleLabel = (role) => {
         if (!role) return "Guest";
@@ -310,6 +325,19 @@ export default function Navbar() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
+                    {canUseOfflineMode ? (
+                        <label className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs sm:text-sm">
+                            <span className="font-semibold text-warning-content">Offline Mode</span>
+                            <input
+                                type="checkbox"
+                                className="toggle toggle-warning toggle-sm"
+                                checked={isOfflineMode}
+                                onChange={(event) => setOfflineMode(event.target.checked)}
+                                aria-label="Enable Offline Mode"
+                            />
+                        </label>
+                    ) : null}
+
                     <button
                         className="btn btn-outline btn-sm"
                         aria-label="Toggle dark/light mode"
@@ -342,6 +370,12 @@ export default function Navbar() {
             <div className="px-4 py-2 bg-base-100 border-b border-base-300/80">
                 <Breadcrumbs items={breadcrumbItems} />
             </div>
+
+            {canUseOfflineMode && isOfflineMode ? (
+                <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs sm:text-sm">
+                    Offline mode is enabled. Limited navigation is active for quick SMS reporting.
+                </div>
+            ) : null}
         </nav>
     );
 }

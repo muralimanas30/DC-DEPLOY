@@ -1,3 +1,4 @@
 const { updateUser } = require('./update');
+const { clearDatabase } = require('./clearDb');
 
-module.exports = { updateUser }
+module.exports = { updateUser, clearDatabase };

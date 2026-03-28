@@ -1,0 +1,26 @@
+{
+  "name": "Disaster Connect",
+  "short_name": "DConnect",
+  "description": "Disaster response coordination web app",
+  "id": "/offline-report",
+  "start_url": "/offline-report",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12364a",
+  "theme_color": "#12364a",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/window.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    }
+  ]
+}

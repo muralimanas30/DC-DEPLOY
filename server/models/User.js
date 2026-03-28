@@ -40,6 +40,31 @@ const userSchema = new mongoose.Schema({
 
     phone: String,
 
+    isGuest: {
+        type: Boolean,
+        default: false,
+        index: true,
+    },
+
+    telegramId: {
+        type: String,
+        default: null,
+        index: true,
+    },
+
+    telegramUsername: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        default: null,
+        index: true,
+    },
+
+    telegramNotificationsEnabled: {
+        type: Boolean,
+        default: true,
+    },
+
     skills: {
         type: [String],
         default: [],

@@ -11,6 +11,8 @@ const app = express();
 // --- DB connection (REST + socket handlers depend on Mongo) ---
 const connectDB = require("./db/connect");
 
+console.log('[APP] Initializing server...');
+
 const ready = (async () => {
     await connectDB();
 })();
@@ -57,4 +59,4 @@ app.use(errorHandler);
 
 
 
-module.exports = { app };
+module.exports = { app, ready };

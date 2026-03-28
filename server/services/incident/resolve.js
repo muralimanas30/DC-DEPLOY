@@ -5,6 +5,13 @@ const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
+const { notifyIncidentResolved } = require("../telegram");
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        console.error(`[TELEGRAM] ${label} notification failed:`, error?.message || error);
+    });
+};
 
 const toObjectIdString = (value) => value?.toString();
 const removeUserFromList = (list = [], userId) => list.filter((id) => toObjectIdString(id) !== userId);
@@ -179,6 +186,11 @@ const resolveIncident = async (req, res, next) => {
                 autoClosedBecauseNoVictims: false,
             },
         });
+
+        fireAndForget(
+            notifyIncidentResolved({ incidentId: updatedIncident._id }),
+            `incident-resolved:${updatedIncident._id}`
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

@@ -5,6 +5,13 @@ const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
+const { notifyIncidentWorking, notifyVolunteerAssigned } = require("../telegram");
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        console.error(`[TELEGRAM] ${label} notification failed:`, error?.message || error);
+    });
+};
 
 const roleToField = {
     victim: "victims",
@@ -161,6 +168,13 @@ const joinIncident = async (req, res, next) => {
             },
         });
 
+        if (me.activeRole === 'volunteer') {
+            fireAndForget(
+                notifyIncidentWorking({ incidentId: normalizedIncident._id }),
+                `incident-working:${normalizedIncident._id}`
+            );
+        }
+
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
             msg: "Joined incident successfully",
@@ -242,7 +256,7 @@ const assignUser = async (req, res, next) => {
             throw new AppError("Only admins can assign users", StatusCodes.FORBIDDEN, "INCIDENT_ASSIGN_FORBIDDEN");
         }
 
-        const targetUser = await User.findById(userId).select("_id activeRole roles assignedIncident");
+        const targetUser = await User.findById(userId).select("_id name activeRole roles assignedIncident");
         if (!targetUser) {
             throw new AppError("User not found", StatusCodes.NOT_FOUND, "USER_NOT_FOUND");
         }
@@ -278,6 +292,16 @@ const assignUser = async (req, res, next) => {
                 autoClosedBecauseNoVictims,
             },
         });
+
+        if (targetRole === 'volunteer') {
+            fireAndForget(
+                notifyVolunteerAssigned({
+                    incidentId: normalizedIncident._id,
+                    volunteerName: targetUser.name || null,
+                }),
+                `volunteer-assigned:${normalizedIncident._id}`
+            );
+        }
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

@@ -165,7 +165,7 @@ const getAvailableVolunteers = async (req, res, next) => {
         ].map((id) => toStr(id));
 
         const volunteers = await User.find({
-            roles: "volunteer",
+            activeRole: "volunteer",
             _id: { $nin: existingIds },
             assignedIncident: null,
         })

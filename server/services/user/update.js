@@ -2,6 +2,8 @@ const { StatusCodes } = require("http-status-codes");
 const { AppError } = require("../../errorHandler/errorHandler");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
+const { normalizePhone } = require("../../utils/phone");
+const { normalizeTelegramId, normalizeTelegramUsername } = require("../../utils/telegram");
 
 const updateUser = async (req, res, next) => {
     try {
@@ -40,10 +42,67 @@ const updateUser = async (req, res, next) => {
             "currentLocation",
             "isOnline",
             "lastSeen",
+            "phone",
+            "telegramId",
+            "telegramUsername",
+            "telegramNotificationsEnabled",
         ];
 
         for (const field of updatableFields) {
             if (req.body[field] !== undefined) {
+                if (field === "phone") {
+                    const normalizedPhone = normalizePhone(req.body.phone);
+                    if (req.body.phone && !normalizedPhone) {
+                        throw new AppError("Invalid phone number format", StatusCodes.BAD_REQUEST, "INVALID_PHONE");
+                    }
+
+                    user.phone = normalizedPhone;
+                    hasUpdates = true;
+                    continue;
+                }
+
+                if (field === "telegramId") {
+                    const nextValue = req.body.telegramId;
+                    if (nextValue === null || String(nextValue).trim() === "") {
+                        user.telegramId = null;
+                        hasUpdates = true;
+                        continue;
+                    }
+
+                    const normalizedTelegramId = normalizeTelegramId(nextValue);
+                    if (!normalizedTelegramId) {
+                        throw new AppError("Invalid telegram id format", StatusCodes.BAD_REQUEST, "INVALID_TELEGRAM_ID");
+                    }
+
+                    user.telegramId = normalizedTelegramId;
+                    hasUpdates = true;
+                    continue;
+                }
+
+                if (field === "telegramUsername") {
+                    const nextValue = req.body.telegramUsername;
+                    if (nextValue === null || String(nextValue).trim() === "") {
+                        user.telegramUsername = null;
+                        hasUpdates = true;
+                        continue;
+                    }
+
+                    const normalizedTelegramUsername = normalizeTelegramUsername(nextValue);
+                    if (!normalizedTelegramUsername) {
+                        throw new AppError("Invalid telegram username format", StatusCodes.BAD_REQUEST, "INVALID_TELEGRAM_USERNAME");
+                    }
+
+                    user.telegramUsername = normalizedTelegramUsername;
+                    hasUpdates = true;
+                    continue;
+                }
+
+                if (field === "telegramNotificationsEnabled") {
+                    user.telegramNotificationsEnabled = Boolean(req.body.telegramNotificationsEnabled);
+                    hasUpdates = true;
+                    continue;
+                }
+
                 user[field] = req.body[field];
                 hasUpdates = true;
             }

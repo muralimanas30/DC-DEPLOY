@@ -1,14 +1,19 @@
 require("dotenv").config();
 const http = require("http");
-const { app } = require("./app");
+const { app, ready } = require("./app");
 const { initSocket } = require("./socket");
-const { PORT, NODE_ENV } = require("./config");
+const { PORT, NODE_ENV, HOST } = require("./config");
 
 const server = http.createServer(app);
 initSocket(server);
 
-server.listen(PORT, () => {
-    if (NODE_ENV !== "production") {
-        console.log(`[SERVER] Listening on port ${PORT}`);
-    }
-});
+(async () => {
+    await ready;
+    
+    server.listen(PORT, HOST, () => {
+        console.log(`[SERVER] ✓ Server started on port ${PORT}`);
+        console.log(`[SERVER] Host binding: ${HOST}`);
+        console.log(`[SERVER] Environment: ${NODE_ENV}`);
+        console.log('[SERVER] Ready to accept requests');
+    });
+})();

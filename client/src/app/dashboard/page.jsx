@@ -3,6 +3,7 @@ import { auth } from "../api/auth/[...nextauth]/route";
 import RoleBriefingSwitcher from "@/components/dashboard/RoleBriefingSwitcher";
 import CurrentSessionRealtimeCard from "@/components/dashboard/CurrentSessionRealtimeCard";
 import IncidentPulseRealtimeCard from "@/components/dashboard/IncidentPulseRealtimeCard";
+import InstallAppCard from "@/components/dashboard/InstallAppCard";
 
 const ROLE_CONTENT = {
     victim: {
@@ -136,6 +137,7 @@ export default async function DashboardPage() {
                 ))}
 
                 <IncidentPulseRealtimeCard />
+                <InstallAppCard />
             </section>
 
             {user && roleMeta ? (

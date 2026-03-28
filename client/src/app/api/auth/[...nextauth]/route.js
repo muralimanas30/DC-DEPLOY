@@ -4,6 +4,35 @@ import Google from "next-auth/providers/google";
 import axios from "axios";
 import { resolveBackendBaseUrl } from "@/lib/backendBaseUrl";
 
+function sanitizeAuthEnvUrls() {
+    const invalidLiterals = new Set(["null", "undefined", ""]);
+    const keys = ["AUTH_URL", "NEXTAUTH_URL", "NEXTAUTH_URL_INTERNAL"];
+
+    for (const key of keys) {
+        const raw = process.env[key];
+        if (typeof raw !== "string") continue;
+
+        const trimmed = raw.trim();
+        const normalized = trimmed.toLowerCase();
+        if (invalidLiterals.has(normalized)) {
+            delete process.env[key];
+            continue;
+        }
+
+        try {
+            const parsed = new URL(trimmed);
+            const isHttp = parsed.protocol === "http:" || parsed.protocol === "https:";
+            if (!isHttp || parsed.origin === "null") {
+                delete process.env[key];
+            }
+        } catch {
+            delete process.env[key];
+        }
+    }
+}
+
+sanitizeAuthEnvUrls();
+
 function unwrapPayload(responseData) {
     return responseData?.data ?? responseData;
 }
@@ -109,6 +138,7 @@ export const authOptions = {
                 user.role = backendUser?.activeRole || backendUser?.role || user?.role;
                 user.assignedIncident = backendUser?.assignedIncident || user?.assignedIncident || null;
                 user.skills = backendUser?.skills || user?.skills || [];
+                user.phone = backendUser?.phone || user?.phone || null;
                 user.name = backendUser?.name || user?.name;
                 user.email = backendUser?.email || user?.email;
                 user.image = backendUser?.image || user?.image;
@@ -131,6 +161,7 @@ export const authOptions = {
                 token.image = user.image || token.image;
                 token.assignedIncident = user.assignedIncident || token.assignedIncident || null;
                 token.skills = user.skills || token.skills || [];
+                token.phone = user.phone || token.phone || null;
             }
 
             if (trigger === "update" && session) {
@@ -150,6 +181,10 @@ export const authOptions = {
                 if (Array.isArray(session.skills)) {
                     token.skills = session.skills;
                 }
+
+                if (session.phone !== undefined) {
+                    token.phone = session.phone;
+                }
             }
 
             return token;
@@ -165,6 +200,7 @@ export const authOptions = {
                 role: token.activeRole || token.role,
                 assignedIncident: token.assignedIncident,
                 skills: token.skills || [],
+                phone: token.phone || null,
             };
             return session;
         },

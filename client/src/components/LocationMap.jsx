@@ -4,6 +4,45 @@ import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-markercluster";
 
+function toCoord(value) {
+    return Number.isFinite(value) ? Number(value).toFixed(6) : null;
+}
+
+function canNavigateToMarker(marker) {
+    return ["victim", "volunteer", "admin"].includes(String(marker?.type || "").toLowerCase());
+}
+
+function getGoogleDirectionsUrl(destination, origin) {
+    const params = new URLSearchParams({
+        api: "1",
+        destination: `${destination.lat},${destination.lng}`,
+        travelmode: "driving",
+    });
+
+    if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng)) {
+        params.set("origin", `${origin.lat},${origin.lng}`);
+    }
+
+    return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function getOpenStreetMapDirectionsUrl(destination, origin) {
+    if (!origin || !Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)) {
+        return `https://www.openstreetmap.org/?mlat=${destination.lat}&mlon=${destination.lng}#map=15/${destination.lat}/${destination.lng}`;
+    }
+
+    return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin.lat}%2C${origin.lng}%3B${destination.lat}%2C${destination.lng}`;
+}
+
+function openExternalRoute(url) {
+    if (typeof window === "undefined") return;
+
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (opened) {
+        opened.opener = null;
+    }
+}
+
 function normalizeCenter(markers, center) {
     if (center && Number.isFinite(center.lng) && Number.isFinite(center.lat)) {
         return [center.lat, center.lng];
@@ -122,7 +161,7 @@ function FitBounds({ markers }) {
  *   markers: [{ id, lng, lat, label, type, title, details, href }]
  *   center: { lng, lat }
  */
-export default function LocationMap({ markers = [], center }) {
+export default function LocationMap({ markers = [], center, origin }) {
     const validMarkers = markers.filter((marker) => Number.isFinite(marker?.lat) && Number.isFinite(marker?.lng));
     const displayMarkers = spreadOverlappingMarkers(validMarkers);
     const mapCenter = normalizeCenter(displayMarkers, center);
@@ -167,6 +206,38 @@ export default function LocationMap({ markers = [], center }) {
                                             Open details
                                         </a>
                                     ) : null}
+                                    {canNavigateToMarker(marker) ? (
+                                        <div className="pt-1 border-t border-base-300/60 space-y-1">
+                                            <div className="text-[11px] opacity-70">
+                                                Navigate to this user
+                                                {Number.isFinite(origin?.lat) && Number.isFinite(origin?.lng)
+                                                    ? ` from ${toCoord(origin.lat)}, ${toCoord(origin.lng)}`
+                                                    : " from your current location"}
+                                            </div>
+                                            <div className="flex gap-3 text-xs">
+                                                <button
+                                                    type="button"
+                                                    className="link link-secondary"
+                                                    onClick={() => openExternalRoute(getGoogleDirectionsUrl(
+                                                        { lat: marker.lat, lng: marker.lng },
+                                                        origin
+                                                    ))}
+                                                >
+                                                    Open Google Maps
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="link link-accent"
+                                                    onClick={() => openExternalRoute(getOpenStreetMapDirectionsUrl(
+                                                        { lat: marker.lat, lng: marker.lng },
+                                                        origin
+                                                    ))}
+                                                >
+                                                    Open Map Route
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </div>
                             </Popup>
                         </Marker>
@@ -191,6 +262,10 @@ LocationMap.propTypes = {
         })
     ),
     center: PropTypes.shape({
+        lng: PropTypes.number,
+        lat: PropTypes.number,
+    }),
+    origin: PropTypes.shape({
         lng: PropTypes.number,
         lat: PropTypes.number,
     }),

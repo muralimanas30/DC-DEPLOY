@@ -1,4 +1,4 @@
-const { updateUser } = require("../services/user/index");
+const { updateUser, clearDatabase } = require("../services/user/index");
 
-const userController = { updateUser };
+const userController = { updateUser, clearDatabase };
 module.exports = { userController };
