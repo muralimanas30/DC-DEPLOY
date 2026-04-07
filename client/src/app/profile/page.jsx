@@ -3,6 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 
+const normalizeIndianPhone = (rawPhone) => {
+    const value = String(rawPhone || "").trim();
+    if (!value) return null;
+
+    const digits = value.replace(/\D/g, "");
+    let local = digits;
+
+    if (local.length === 12 && local.startsWith("91")) {
+        local = local.slice(2);
+    } else if (local.length === 11 && local.startsWith("0")) {
+        local = local.slice(1);
+    }
+
+    return /^[6-9]\d{9}$/.test(local) ? local : null;
+};
+
 export default function ProfilePage() {
     const { data: session, status, update } = useSession();
     const [activeRole, setActiveRole] = useState("");
@@ -11,6 +27,9 @@ export default function ProfilePage() {
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(false);
     const [clearDbLoading, setClearDbLoading] = useState(false);
+    const [smsTestLoading, setSmsTestLoading] = useState(false);
+    const [smsTestPhone, setSmsTestPhone] = useState("9848940005");
+    const [smsTestMessage, setSmsTestMessage] = useState("Hi hello, SMS test working from Disaster Connect.");
     const [message, setMessage] = useState("");
     const [error, setError] = useState("");
 
@@ -20,7 +39,7 @@ export default function ProfilePage() {
     const currentRole = user?.activeRole || user?.role || "victim";
     const selectedRole = activeRole || currentRole;
     const isAssignedToIncident = Boolean(user?.assignedIncident);
-    const isAdminUser = Boolean(currentRole === "admin" || (Array.isArray(user?.roles) && user.roles.includes("admin")));
+    const isAdminUser = currentRole === "admin";
 
     useEffect(() => {
         const initialSkills = Array.isArray(user?.skills) ? user.skills : [];
@@ -28,7 +47,8 @@ export default function ProfilePage() {
     }, [user?.skills]);
 
     useEffect(() => {
-        setPhoneInput(String(user?.phone || ""));
+        const normalizedPhone = normalizeIndianPhone(user?.phone);
+        setPhoneInput(normalizedPhone || String(user?.phone || ""));
     }, [user?.phone]);
 
     const addSkill = () => {
@@ -130,8 +150,14 @@ export default function ProfilePage() {
         setError("");
         setMessage("");
 
-        const normalizedInput = String(phoneInput || "").trim();
-        const existingPhone = String(user?.phone || "").trim();
+        const rawInput = String(phoneInput || "").trim();
+        const normalizedInput = rawInput ? normalizeIndianPhone(rawInput) : "";
+        if (rawInput && !normalizedInput) {
+            setError("Use a valid 10-digit Indian mobile number.");
+            return;
+        }
+
+        const existingPhone = normalizeIndianPhone(user?.phone) || String(user?.phone || "").trim();
         if (normalizedInput === existingPhone) {
             setMessage("No phone changes to save");
             return;
@@ -164,7 +190,7 @@ export default function ProfilePage() {
                 assignedIncident: payload?.data?.user?.assignedIncident ?? user?.assignedIncident ?? null,
             });
 
-            setPhoneInput(String(updatedPhone || ""));
+            setPhoneInput(normalizeIndianPhone(updatedPhone) || String(updatedPhone || ""));
             setMessage("Phone number synced successfully");
         } catch (err) {
             setError(err?.message || "Failed to update phone number");
@@ -176,20 +202,6 @@ export default function ProfilePage() {
     const onClearDatabase = async () => {
         setError("");
         setMessage("");
-
-        const typedConfirmation = window.prompt(
-            "This will permanently remove incidents, message logs, and non-admin users. Type CLEAR_DB to continue."
-        );
-
-        if (typedConfirmation === null) return;
-
-        if (String(typedConfirmation).trim().toUpperCase() !== "CLEAR_DB") {
-            setError("Confirmation text did not match. Database clear cancelled.");
-            return;
-        }
-
-        const finalConfirm = window.confirm("Final confirmation: clear database now?");
-        if (!finalConfirm) return;
 
         setClearDbLoading(true);
         try {
@@ -212,6 +224,45 @@ export default function ProfilePage() {
             setError(err?.message || "Failed to clear database");
         } finally {
             setClearDbLoading(false);
+        }
+    };
+
+    const onSendSmsTest = async () => {
+        setError("");
+        setMessage("");
+
+        const normalizedTarget = normalizeIndianPhone(smsTestPhone);
+        if (!normalizedTarget) {
+            setError("Use a valid 10-digit Indian mobile number for SMS test target.");
+            return;
+        }
+
+        const finalMessage = String(smsTestMessage || "").trim() || "Hi hello, SMS test working from Disaster Connect.";
+
+        setSmsTestLoading(true);
+        try {
+            const res = await fetch("/api/admin/sms-test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    toPhone: normalizedTarget,
+                    message: finalMessage,
+                }),
+            });
+
+            const payload = await res.json();
+            if (!res.ok || payload?.status !== "success") {
+                throw new Error(payload?.msg || "Failed to trigger SMS test");
+            }
+
+            const smsStatus = payload?.data?.status ? ` (${payload.data.status})` : "";
+            setMessage(`${payload?.msg || "SMS test sent"}${smsStatus}`);
+        } catch (err) {
+            setError(err?.message || "Failed to trigger SMS test");
+        } finally {
+            setSmsTestLoading(false);
         }
     };
 
@@ -270,7 +321,8 @@ export default function ProfilePage() {
                                 className="input input-bordered"
                                 value={phoneInput}
                                 onChange={(event) => setPhoneInput(event.target.value)}
-                                placeholder="+919876543210"
+                                placeholder="9876543210"
+                                inputMode="numeric"
                                 disabled={loading || clearDbLoading}
                             />
                         </label>
@@ -388,20 +440,59 @@ export default function ProfilePage() {
                         <div className="space-y-3 border border-error/30 rounded-xl p-4 bg-error/5">
                             <div className="text-sm font-semibold text-error">Admin Controls</div>
                             <p className="text-sm text-base-content/70">
-                                Clear the database to start fresh. This removes incidents, incident messages, SMS/Telegram logs,
+                                Clear the database to start fresh. This removes incidents, incident messages, SMS logs,
                                 and all non-admin users. Admin users are preserved.
                             </p>
                             <button
                                 type="button"
                                 className="btn btn-error"
                                 onClick={onClearDatabase}
-                                disabled={loading || clearDbLoading}
+                                disabled={loading || clearDbLoading || smsTestLoading}
                             >
                                 {clearDbLoading ? "Clearing Database..." : "Clear Database"}
                             </button>
                             <p className="text-xs text-base-content/60">
                                 This action resets data only. It does not recompile or rebuild frontend/backend code.
                             </p>
+
+                            <div className="divider my-1"></div>
+
+                            <div className="text-sm font-semibold text-primary">SMS Test Sender</div>
+                            <p className="text-sm text-base-content/70">
+                                Send a sample SMS from backend to verify gateway delivery quickly.
+                            </p>
+
+                            <label className="form-control">
+                                <span className="label-text">Target Phone Number</span>
+                                <input
+                                    className="input input-bordered"
+                                    value={smsTestPhone}
+                                    onChange={(event) => setSmsTestPhone(event.target.value)}
+                                    placeholder="9848940005"
+                                    inputMode="numeric"
+                                    disabled={loading || clearDbLoading || smsTestLoading}
+                                />
+                            </label>
+
+                            <label className="form-control">
+                                <span className="label-text">Message</span>
+                                <textarea
+                                    className="textarea textarea-bordered min-h-24"
+                                    value={smsTestMessage}
+                                    onChange={(event) => setSmsTestMessage(event.target.value)}
+                                    placeholder="Hi hello, SMS test working from Disaster Connect."
+                                    disabled={loading || clearDbLoading || smsTestLoading}
+                                />
+                            </label>
+
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={onSendSmsTest}
+                                disabled={loading || clearDbLoading || smsTestLoading}
+                            >
+                                {smsTestLoading ? "Sending SMS Test..." : "Send SMS Test"}
+                            </button>
                         </div>
                     )}
                 </div>

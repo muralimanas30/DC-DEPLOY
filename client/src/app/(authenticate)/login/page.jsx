@@ -4,7 +4,6 @@ import { useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
 import AuthForm from "../../../components/SignIn";
 import Hero from "../../../components/Hero";
-import AuthButtons from "@/components/button/AuthButtons";
 
 export default function LoginPage() {
     const { user, success } = useSelector((state) => state.user);
@@ -30,8 +29,6 @@ export default function LoginPage() {
                     Welcome back! Log in to connect with your community, report incidents, join relief efforts, and stay updated in real time. Your account keeps you safe, informed, and empowered during disasters.
                 </p>
                 <AuthForm mode="login" />
-                {/* add auth buttons below the form */}
-                
             </div>
             {/* Animated vertical divider, only on md+ screens */}
             <div className="hidden md:flex h-[320px]">
@@ -44,7 +41,6 @@ export default function LoginPage() {
                 line2="Join, report, and help coordinate relief efforts."
                 line3="Secure, real-time, and community-driven."
             />
-            
         </div>
     );
 }

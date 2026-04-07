@@ -6,8 +6,24 @@ import { useSession } from "next-auth/react";
 import useCurrentLocation from "@/hooks/useCurrentLocation";
 import useOfflineMode from "@/hooks/useOfflineMode";
 
-const TARGET_SMS_NUMBER = process.env.NEXT_PUBLIC_OFFLINE_SMS_NUMBER || "";
+const TARGET_SMS_NUMBER = process.env.NEXT_PUBLIC_OFFLINE_SMS_NUMBER || "9121886918";
 const OFFLINE_REPORT_STORAGE_KEY = "dc.offline-report.form.v2";
+
+const normalizeIndianPhone = (rawPhone) => {
+    const value = String(rawPhone || "").trim();
+    if (!value) return null;
+
+    const digits = value.replace(/\D/g, "");
+    let local = digits;
+
+    if (local.length === 12 && local.startsWith("91")) {
+        local = local.slice(2);
+    } else if (local.length === 11 && local.startsWith("0")) {
+        local = local.slice(1);
+    }
+
+    return /^[6-9]\d{9}$/.test(local) ? local : null;
+};
 
 const readStoredForm = () => {
     if (typeof window === "undefined") return {};
@@ -46,20 +62,13 @@ export default function OfflineReportPage() {
 
     const [reportType, setReportType] = useState("incident");
     const [incidentRef, setIncidentRef] = useState("");
-    const [recipient, setRecipient] = useState(String(TARGET_SMS_NUMBER || ""));
+    const [recipient, setRecipient] = useState(normalizeIndianPhone(TARGET_SMS_NUMBER) || "");
     const [email, setEmail] = useState("");
-    const [phone, setPhone] = useState("");
     const [details, setDetails] = useState("");
     const [lastDraft, setLastDraft] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [copied, setCopied] = useState(false);
     const [localError, setLocalError] = useState("");
-
-    useEffect(() => {
-        if (!phone && session?.user?.phone) {
-            setPhone(String(session.user.phone));
-        }
-    }, [phone, session?.user?.phone]);
 
     useEffect(() => {
         if (!email && session?.user?.email) {
@@ -70,10 +79,6 @@ export default function OfflineReportPage() {
     useEffect(() => {
         const stored = readStoredForm();
 
-        if (!phone && stored.phone) {
-            setPhone(String(stored.phone));
-        }
-
         if (!incidentRef && stored.incidentRef) {
             setIncidentRef(String(stored.incidentRef));
         }
@@ -83,7 +88,7 @@ export default function OfflineReportPage() {
         }
 
         if (!recipient && stored.recipient) {
-            setRecipient(String(stored.recipient));
+            setRecipient(normalizeIndianPhone(stored.recipient) || String(stored.recipient));
         }
 
         if (!email && stored.email) {
@@ -99,7 +104,6 @@ export default function OfflineReportPage() {
         const payload = {
             recipient,
             email,
-            phone,
             reportType,
             incidentRef,
             details,
@@ -107,7 +111,7 @@ export default function OfflineReportPage() {
         };
 
         window.localStorage.setItem(OFFLINE_REPORT_STORAGE_KEY, JSON.stringify(payload));
-    }, [recipient, email, phone, reportType, incidentRef, details]);
+    }, [recipient, email, reportType, incidentRef, details]);
 
     const normalizedLocation = useMemo(() => {
         if (
@@ -141,17 +145,38 @@ export default function OfflineReportPage() {
     const smsDraft = useMemo(() => {
         const typeLabel = reportType === "alert" ? "ALERT" : "INCIDENT";
         const sender = (session?.user?.name || "Guest User").trim();
-        const contact = phone?.trim() || "unknown";
         const emailValue = email?.trim() || "unknown";
         const lat = formatCoord(normalizedLocation?.lat) || "n/a";
         const lng = formatCoord(normalizedLocation?.lng) || "n/a";
         const shortRef = incidentRef.trim() ? `REF:${incidentRef.trim()} | ` : "";
         const body = details.trim() || "No additional details provided";
 
-        return `DC_REPORT | TYPE:${typeLabel} | ${shortRef}FROM:${sender} | EMAIL:${emailValue} | PHONE:${contact} | LOC:${lat},${lng} | DETAILS:${body}`;
-    }, [reportType, session?.user?.name, email, phone, normalizedLocation?.lat, normalizedLocation?.lng, incidentRef, details]);
+        return `DC_REPORT | TYPE:${typeLabel} | ${shortRef}FROM:${sender} | EMAIL:${emailValue} | LOC:${lat},${lng} | DETAILS:${body}`;
+    }, [reportType, session?.user?.name, email, normalizedLocation?.lat, normalizedLocation?.lng, incidentRef, details]);
 
-    const canCompose = Boolean(recipient.trim() && email.trim() && phone.trim() && details.trim());
+    const smsPreview = useMemo(() => {
+        const typeLabel = reportType === "alert" ? "ALERT" : "INCIDENT";
+        const sender = (session?.user?.name || "Guest User").trim();
+        const emailValue = email?.trim() || "unknown";
+        const lat = formatCoord(normalizedLocation?.lat) || "n/a";
+        const lng = formatCoord(normalizedLocation?.lng) || "n/a";
+        const refValue = incidentRef.trim() || "n/a";
+        const body = details.trim() || "No additional details provided";
+
+        return [
+            "DC_REPORT",
+            `TYPE: ${typeLabel}`,
+            `REF: ${refValue}`,
+            `FROM: ${sender}`,
+            `EMAIL: ${emailValue}`,
+            `LOC: ${lat},${lng}`,
+            `DETAILS: ${body}`,
+        ].join("\n");
+    }, [reportType, session?.user?.name, email, normalizedLocation?.lat, normalizedLocation?.lng, incidentRef, details]);
+
+    const normalizedRecipient = useMemo(() => normalizeIndianPhone(recipient), [recipient]);
+
+    const canCompose = Boolean(normalizedRecipient && email.trim() && details.trim());
 
     const handleCopyDraft = async () => {
         try {
@@ -168,7 +193,7 @@ export default function OfflineReportPage() {
         setLocalError("");
 
         if (!canCompose || isSubmitting) {
-            setLocalError("Recipient, email, phone number, and report details are required.");
+            setLocalError("Use a valid 10-digit Indian mobile number for recipient and fill all required fields.");
             return;
         }
 
@@ -183,7 +208,7 @@ export default function OfflineReportPage() {
                     body: JSON.stringify({
                         type: reportType,
                         incidentId: incidentRef.trim() || null,
-                        phone: phone.trim(),
+                        phone: normalizeIndianPhone(session?.user?.phone) || null,
                         message: smsDraft,
                         lat: normalizedLocation?.lat,
                         lng: normalizedLocation?.lng,
@@ -200,7 +225,7 @@ export default function OfflineReportPage() {
         }
 
         if (typeof window !== "undefined") {
-            window.location.href = buildSmsUri(recipient, smsDraft);
+            window.location.href = buildSmsUri(normalizedRecipient, smsDraft);
         }
     };
 
@@ -258,9 +283,10 @@ export default function OfflineReportPage() {
                             <span className="label-text">Gateway Recipient Number</span>
                             <input
                                 className="input input-bordered"
-                                placeholder="+919876543210"
+                                placeholder="9876543210"
                                 value={recipient}
                                 onChange={(event) => setRecipient(event.target.value)}
+                                inputMode="numeric"
                                 required
                             />
                         </label>
@@ -283,17 +309,6 @@ export default function OfflineReportPage() {
                                 placeholder="e.g. 67df2d..."
                                 value={incidentRef}
                                 onChange={(event) => setIncidentRef(event.target.value)}
-                            />
-                        </label>
-
-                        <label className="form-control">
-                            <span className="label-text">Your Phone Number</span>
-                            <input
-                                className="input input-bordered"
-                                placeholder="+15551234567"
-                                value={phone}
-                                onChange={(event) => setPhone(event.target.value)}
-                                required
                             />
                         </label>
 
@@ -330,8 +345,8 @@ export default function OfflineReportPage() {
                             This is the exact text that will be opened in your SMS app.
                         </p>
 
-                        <div className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm wrap-break-word">
-                            {smsDraft}
+                        <div className="rounded-lg border border-base-300 bg-base-200 p-4 text-sm whitespace-pre-wrap wrap-break-word leading-relaxed">
+                            {smsPreview}
                         </div>
 
                         {lastDraft ? (
