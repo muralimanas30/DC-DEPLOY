@@ -5,11 +5,12 @@ const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
-const { notifyIncidentResolved } = require("../telegram");
+const { notifyIncidentResolvedParticipants } = require("../sms");
+const { logger } = require("../../utils/logger");
 
 const fireAndForget = (promise, label) => {
     promise.catch((error) => {
-        console.error(`[TELEGRAM] ${label} notification failed:`, error?.message || error);
+        logger.error('notify', `${label} failed`, error?.message || error);
     });
 };
 
@@ -35,6 +36,13 @@ const resolveIncident = async (req, res, next) => {
         if (incident.status === "closed") {
             throw new AppError("Incident is closed", StatusCodes.CONFLICT, "INCIDENT_CLOSED");
         }
+
+        const originalVictimIds = (incident.victims || []).map((id) => id.toString());
+        const originalParticipantIds = [
+            ...(incident.victims || []).map((id) => id.toString()),
+            ...(incident.volunteers || []).map((id) => id.toString()),
+            ...(incident.admins || []).map((id) => id.toString()),
+        ];
 
         const me = (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId))
             ? await User.findById(rawUserId).select("_id activeRole email")
@@ -93,6 +101,15 @@ const resolveIncident = async (req, res, next) => {
                     autoClosedBecauseNoVictims: false,
                 },
             });
+
+            fireAndForget(
+                notifyIncidentResolvedParticipants({
+                    incidentId: incident._id,
+                    participantIds: originalParticipantIds,
+                    victimIds: originalVictimIds,
+                }),
+                "incident-resolved-force-close"
+            );
 
             return sendSuccess(res, {
                 statusCode: StatusCodes.OK,
@@ -162,6 +179,15 @@ const resolveIncident = async (req, res, next) => {
                 },
             });
 
+            fireAndForget(
+                notifyIncidentResolvedParticipants({
+                    incidentId: updatedIncident._id,
+                    participantIds: originalParticipantIds,
+                    victimIds: originalVictimIds,
+                }),
+                "incident-resolved-closed"
+            );
+
             return sendSuccess(res, {
                 statusCode: StatusCodes.OK,
                 msg: "Incident closed successfully",
@@ -186,11 +212,6 @@ const resolveIncident = async (req, res, next) => {
                 autoClosedBecauseNoVictims: false,
             },
         });
-
-        fireAndForget(
-            notifyIncidentResolved({ incidentId: updatedIncident._id }),
-            `incident-resolved:${updatedIncident._id}`
-        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

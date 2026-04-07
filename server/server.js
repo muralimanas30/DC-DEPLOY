@@ -3,6 +3,7 @@ const http = require("http");
 const { app, ready } = require("./app");
 const { initSocket } = require("./socket");
 const { PORT, NODE_ENV, HOST } = require("./config");
+const { logger } = require("./utils/logger");
 
 const server = http.createServer(app);
 initSocket(server);
@@ -11,9 +12,9 @@ initSocket(server);
     await ready;
     
     server.listen(PORT, HOST, () => {
-        console.log(`[SERVER] ✓ Server started on port ${PORT}`);
-        console.log(`[SERVER] Host binding: ${HOST}`);
-        console.log(`[SERVER] Environment: ${NODE_ENV}`);
-        console.log('[SERVER] Ready to accept requests');
+        logger.success('server', `Server started on port ${logger.highlight(PORT)}`);
+        logger.server(`Host binding: ${logger.highlight(HOST)}`);
+        logger.server(`Environment: ${logger.highlight(NODE_ENV)}`);
+        logger.server('Ready to accept requests');
     });
 })();

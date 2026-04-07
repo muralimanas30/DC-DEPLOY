@@ -1,18 +1,38 @@
-const mongoose = require('mongoose');
 const { StatusCodes } = require('http-status-codes');
 const { AppError } = require('../../errorHandler/errorHandler');
 const User = require('../../models/User');
 const Incident = require('../../models/Incident');
 const IncidentMessage = require('../../models/IncidentMessage');
 const SmsMessage = require('../../models/SmsMessage');
-const TelegramMessage = require('../../models/TelegramMessage');
 const { sendSuccess } = require('../../utils/response');
+const { notifyAdminAudit } = require('../sms');
+const { logger } = require('../../utils/logger');
 
 const CONFIRMATION_TEXT = 'CLEAR_DB';
 
-const isAdmin = (user) => {
-    const roles = Array.isArray(user?.roles) ? user.roles : [];
-    return user?.activeRole === 'admin' || roles.includes('admin');
+const isObjectIdString = (value) => /^[a-f\d]{24}$/i.test(String(value || '').trim());
+
+const resolveRequesterFromDb = async (req) => {
+    const requesterLookupConditions = [];
+    const requesterUserId = req.userId || req.user?.id || req.user?._id || null;
+    if (requesterUserId && isObjectIdString(requesterUserId)) {
+        requesterLookupConditions.push({ _id: String(requesterUserId).trim() });
+    }
+    if (req.user?.email) {
+        requesterLookupConditions.push({ email: req.user.email });
+    }
+
+    if (!requesterLookupConditions.length) {
+        return null;
+    }
+
+    return User.findOne({ $or: requesterLookupConditions }).select('_id email activeRole');
+};
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        logger.error('notify', `${label} failed`, error?.message || error);
+    });
 };
 
 const clearDatabase = async (req, res, next) => {
@@ -21,8 +41,13 @@ const clearDatabase = async (req, res, next) => {
             throw new AppError('Unauthorized', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
         }
 
-        if (!isAdmin(req.user)) {
-            throw new AppError('Only admins can clear the database', StatusCodes.FORBIDDEN, 'FORBIDDEN');
+        const requester = await resolveRequesterFromDb(req);
+        if (!requester) {
+            throw new AppError('Unauthorized', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+        }
+
+        if (requester.activeRole !== 'admin') {
+            throw new AppError('Only users with current admin role can clear the database', StatusCodes.FORBIDDEN, 'FORBIDDEN');
         }
 
         const confirmation = String(req.body?.confirmation || '').trim().toUpperCase();
@@ -34,59 +59,70 @@ const clearDatabase = async (req, res, next) => {
             );
         }
 
-        const session = await mongoose.startSession();
-        let summary = null;
+        const adminUsers = await User.find({
+            $or: [
+                { activeRole: 'admin' },
+                { roles: 'admin' },
+            ],
+        }).select('_id email');
 
-        try {
-            await session.withTransaction(async () => {
-                const adminUsers = await User.find({ roles: 'admin' }).select('_id').session(session);
-                const preservedAdminIds = adminUsers.map((user) => user._id);
+        const preservedAdminIds = adminUsers.map((user) => user._id);
 
-                const [
-                    incidentResult,
-                    incidentMessageResult,
-                    smsResult,
-                    telegramResult,
-                    deletedUsersResult,
-                    resetAdminsResult,
-                ] = await Promise.all([
-                    Incident.deleteMany({}, { session }),
-                    IncidentMessage.deleteMany({}, { session }),
-                    SmsMessage.deleteMany({}, { session }),
-                    TelegramMessage.deleteMany({}, { session }),
-                    User.deleteMany({ _id: { $nin: preservedAdminIds } }, { session }),
-                    User.updateMany(
-                        { _id: { $in: preservedAdminIds } },
-                        {
-                            $set: {
-                                assignedIncident: null,
-                                isOnline: false,
-                                currentLocation: { type: 'Point', coordinates: [0, 0] },
-                                lastSeen: new Date(),
-                            },
-                        },
-                        { session }
-                    ),
-                ]);
-
-                summary = {
-                    incidentsCleared: incidentResult?.deletedCount || 0,
-                    incidentMessagesCleared: incidentMessageResult?.deletedCount || 0,
-                    smsMessagesCleared: smsResult?.deletedCount || 0,
-                    telegramMessagesCleared: telegramResult?.deletedCount || 0,
-                    usersDeleted: deletedUsersResult?.deletedCount || 0,
-                    adminsPreserved: preservedAdminIds.length,
-                    adminsReset: resetAdminsResult?.modifiedCount || 0,
-                };
-            });
-        } finally {
-            session.endSession();
+        const requesterId = String(requester._id);
+        const alreadyPreserved = preservedAdminIds.some((id) => String(id) === requesterId);
+        if (!alreadyPreserved) {
+            preservedAdminIds.push(requester._id);
         }
 
-        console.warn('[ADMIN_CLEAR_DB] Database cleared by admin', {
-            byUserId: req.userId || req.user?.id || req.user?._id || null,
+        const [
+            incidentResult,
+            incidentMessageResult,
+            smsResult,
+            deletedUsersResult,
+            resetAdminsResult,
+        ] = await Promise.all([
+            Incident.deleteMany({}),
+            IncidentMessage.deleteMany({}),
+            SmsMessage.deleteMany({}),
+            User.deleteMany({ _id: { $nin: preservedAdminIds } }),
+            User.updateMany(
+                { _id: { $in: preservedAdminIds } },
+                {
+                    $set: {
+                        assignedIncident: null,
+                        isOnline: false,
+                        currentLocation: { type: 'Point', coordinates: [0, 0] },
+                        lastSeen: new Date(),
+                    },
+                }
+            ),
+        ]);
+
+        const summary = {
+            incidentsCleared: incidentResult?.deletedCount || 0,
+            incidentMessagesCleared: incidentMessageResult?.deletedCount || 0,
+            smsMessagesCleared: smsResult?.deletedCount || 0,
+            usersDeleted: deletedUsersResult?.deletedCount || 0,
+            adminsPreserved: preservedAdminIds.length,
+            adminsReset: resetAdminsResult?.modifiedCount || 0,
+        };
+
+        logger.warn('server', 'Database cleared by admin', {
+            byUserId: requester._id,
             summary,
         });
+
+        fireAndForget(
+            notifyAdminAudit({
+                action: 'clear-database',
+                details: `Database clear executed by admin ${requester._id}. Incidents cleared: ${summary.incidentsCleared}, users deleted: ${summary.usersDeleted}.`,
+                meta: {
+                    actorId: requester._id?.toString?.() || String(requester._id),
+                    summary,
+                },
+            }),
+            'admin-audit-clear-db'
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

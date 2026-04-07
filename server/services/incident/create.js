@@ -4,11 +4,12 @@ const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
-const { notifyIncidentReceived, notifyHighSeverityAlert } = require("../telegram");
+const { notifyIncidentCreated } = require("../sms");
+const { logger } = require("../../utils/logger");
 
 const fireAndForget = (promise, label) => {
     promise.catch((error) => {
-        console.error(`[TELEGRAM] ${label} notification failed:`, error?.message || error);
+        logger.error('notify', `${label} failed`, error?.message || error);
     });
 };
 
@@ -137,20 +138,10 @@ const createIncident = async (req, res, next) => {
             actorId: creatorId?.toString?.() || creatorId,
         });
 
-        if (creatorRole === "victim") {
-            fireAndForget(
-                notifyIncidentReceived({ incidentId: incident._id }),
-                `incident-received:${incident._id}`
-            );
-        }
-
-        const normalizedSeverity = String(severity || incident.severity || '').toLowerCase();
-        if (["high", "critical"].includes(normalizedSeverity)) {
-            fireAndForget(
-                notifyHighSeverityAlert({ incidentId: incident._id }),
-                `high-severity-alert:${incident._id}`
-            );
-        }
+        fireAndForget(
+            notifyIncidentCreated({ incidentId: incident._id }),
+            "incident-created"
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.CREATED,

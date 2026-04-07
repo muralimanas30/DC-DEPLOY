@@ -6,6 +6,14 @@ const IncidentMessage = require("../../models/IncidentMessage");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { getIO, ROOMS, SOCKET_EVENTS } = require("../../socket");
+const { notifyQuickAlertParticipants } = require("../sms");
+const { logger } = require("../../utils/logger");
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        logger.error('notify', `${label} failed`, error?.message || error);
+    });
+};
 
 const ALERT_TEMPLATES = {
     comeToMe: { title: "Come To Me", message: "Move to my location.", severity: "medium" },
@@ -281,6 +289,16 @@ const sendIncidentAlert = async (req, res, next) => {
 
             io.to(ROOMS.incident(String(incidentId))).emit(SOCKET_EVENTS.INCIDENT_CHAT_MESSAGE, mapped);
         }
+
+        fireAndForget(
+            notifyQuickAlertParticipants({
+                incidentId,
+                alertTitle: template.title,
+                alertMessage: template.message,
+                severity: template.severity,
+            }),
+            "incident-quick-alert"
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.CREATED,

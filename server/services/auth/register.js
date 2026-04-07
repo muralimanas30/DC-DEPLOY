@@ -4,9 +4,16 @@ const User = require('../../models/User')
 const { signToken } = require('../../utils/token')
 const { sendSuccess } = require('../../utils/response');
 const { normalizePhone } = require('../../utils/phone');
-const { normalizeTelegramId, normalizeTelegramUsername } = require('../../utils/telegram');
+const { notifyAccountCreated } = require('../sms');
+const { logger } = require('../../utils/logger');
 
 const ALLOWED_ROLES = ["victim", "volunteer", "admin"];
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        logger.error('notify', `${label} failed`, error?.message || error);
+    });
+};
 
 const register = async (req, res, next) => {
     try {
@@ -20,8 +27,6 @@ const register = async (req, res, next) => {
             roles,
             activeRole,
             phone,
-            telegramId,
-            telegramUsername,
         } = req.body;
         if (!email || !password) {
             throw new AppError("Email and password are required", StatusCodes.BAD_REQUEST, "MISSING_CREDENTIALS");
@@ -48,19 +53,7 @@ const register = async (req, res, next) => {
 
         const normalizedPhone = phone ? normalizePhone(phone) : null;
         if (phone && !normalizedPhone) {
-            throw new AppError('Invalid phone number format', StatusCodes.BAD_REQUEST, 'INVALID_PHONE');
-        }
-
-        const normalizedTelegramId = telegramId ? normalizeTelegramId(telegramId) : null;
-        if (telegramId && !normalizedTelegramId) {
-            throw new AppError('Invalid telegram id format', StatusCodes.BAD_REQUEST, 'INVALID_TELEGRAM_ID');
-        }
-
-        const normalizedTelegramUsername = telegramUsername
-            ? normalizeTelegramUsername(telegramUsername)
-            : null;
-        if (telegramUsername && !normalizedTelegramUsername) {
-            throw new AppError('Invalid telegram username format', StatusCodes.BAD_REQUEST, 'INVALID_TELEGRAM_USERNAME');
+            throw new AppError('Invalid phone number. Use a 10-digit Indian mobile number.', StatusCodes.BAD_REQUEST, 'INVALID_PHONE');
         }
 
         const user = await User.create({
@@ -72,9 +65,12 @@ const register = async (req, res, next) => {
             roles: normalizedRoles,
             activeRole: resolvedActiveRole,
             phone: normalizedPhone,
-            telegramId: normalizedTelegramId,
-            telegramUsername: normalizedTelegramUsername,
         });
+
+        fireAndForget(
+            notifyAccountCreated({ userId: user._id }),
+            'account-created'
+        );
 
         const token = signToken(user);
 

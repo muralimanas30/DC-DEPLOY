@@ -4,6 +4,14 @@ const { StatusCodes } = require("http-status-codes");
 const { AppError } = require("../../errorHandler/errorHandler");
 const { signToken } = require("../../utils/token");
 const { sendSuccess } = require('../../utils/response');
+const { notifyAccountCreated } = require('../sms');
+const { logger } = require('../../utils/logger');
+
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        logger.error('notify', `${label} failed`, error?.message || error);
+    });
+};
 const oauthLogin = async (req, res, next) => {
     try {
         const { email, name, image, provider } = req.body;
@@ -31,6 +39,7 @@ const oauthLogin = async (req, res, next) => {
         }
 
         // 🔹 First-time OAuth user
+        let isNewUser = false;
         if (!user) {
             user = await User.create({
                 email,
@@ -40,6 +49,14 @@ const oauthLogin = async (req, res, next) => {
                 provider,
                 password: crypto.randomUUID(), // auto-hashed
             });
+            isNewUser = true;
+        }
+
+        if (isNewUser) {
+            fireAndForget(
+                notifyAccountCreated({ userId: user._id }),
+                'account-created-oauth'
+            );
         }
 
         const token = signToken(user);

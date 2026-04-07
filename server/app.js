@@ -5,16 +5,19 @@ const crypto = require('crypto');
 const { errorHandler } = require('./errorHandler/errorHandler');
 const routes = require('./routes');
 const { CORS_ORIGIN, NODE_ENV } = require('./config');
+const { logger } = require('./utils/logger');
 
 const app = express();
 
 // --- DB connection (REST + socket handlers depend on Mongo) ---
 const connectDB = require("./db/connect");
+const { logSmsStartupReadiness } = require('./services/sms');
 
-console.log('[APP] Initializing server...');
+logger.app('Initializing server...');
 
 const ready = (async () => {
     await connectDB();
+    await logSmsStartupReadiness();
 })();
 
 
@@ -33,7 +36,11 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({
+    verify: (req, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+    },
+}));
 
 app.use((req, res, next) => {
     const traceId = req.headers["x-trace-id"] || crypto.randomUUID();

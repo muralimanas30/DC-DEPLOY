@@ -5,13 +5,15 @@ const Incident = require("../../models/Incident");
 const User = require("../../models/User");
 const { sendSuccess } = require("../../utils/response");
 const { emitIncidentChanged } = require("../../socket");
-const { notifyIncidentWorking, notifyVolunteerAssigned } = require("../telegram");
-
-const fireAndForget = (promise, label) => {
-    promise.catch((error) => {
-        console.error(`[TELEGRAM] ${label} notification failed:`, error?.message || error);
-    });
-};
+const {
+    notifyIncidentWorking,
+    notifyVolunteerAssignedParticipants,
+    notifyVolunteerJoinedParticipants,
+    notifyVolunteerLeftParticipants,
+    notifyIncidentUnassignedParticipants,
+    notifyAdminAudit,
+} = require("../sms");
+const { logger } = require("../../utils/logger");
 
 const roleToField = {
     victim: "victims",
@@ -19,17 +21,23 @@ const roleToField = {
     admin: "admins",
 };
 
+const fireAndForget = (promise, label) => {
+    promise.catch((error) => {
+        logger.error('notify', `${label} failed`, error?.message || error);
+    });
+};
+
 const getCurrentUser = async (req) => {
     const rawUserId = req.user?.id || req.user?._id || req.userId;
 
     const byId = (rawUserId && mongoose.Types.ObjectId.isValid(rawUserId))
-        ? await User.findById(rawUserId).select("_id activeRole roles email assignedIncident")
+        ? await User.findById(rawUserId).select("_id name activeRole roles email assignedIncident")
         : null;
 
     if (byId) return byId;
 
     if (req.user?.email) {
-        return User.findOne({ email: req.user.email }).select("_id activeRole roles email assignedIncident");
+        return User.findOne({ email: req.user.email }).select("_id name activeRole roles email assignedIncident");
     }
 
     return null;
@@ -168,10 +176,18 @@ const joinIncident = async (req, res, next) => {
             },
         });
 
-        if (me.activeRole === 'volunteer') {
+        if (!autoClosedBecauseNoVictims && targetField === "volunteers") {
             fireAndForget(
                 notifyIncidentWorking({ incidentId: normalizedIncident._id }),
-                `incident-working:${normalizedIncident._id}`
+                "incident-working"
+            );
+
+            fireAndForget(
+                notifyVolunteerJoinedParticipants({
+                    incidentId: normalizedIncident._id,
+                    volunteerName: me.name || null,
+                }),
+                "volunteer-joined"
             );
         }
 
@@ -219,6 +235,16 @@ const leaveIncident = async (req, res, next) => {
                 autoClosedBecauseNoVictims,
             },
         });
+
+        if (!autoClosedBecauseNoVictims && me.activeRole === "volunteer") {
+            fireAndForget(
+                notifyVolunteerLeftParticipants({
+                    incidentId: normalizedIncident._id,
+                    volunteerName: me.name || null,
+                }),
+                "volunteer-left"
+            );
+        }
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
@@ -293,15 +319,29 @@ const assignUser = async (req, res, next) => {
             },
         });
 
-        if (targetRole === 'volunteer') {
+        if (!autoClosedBecauseNoVictims && targetRole === "volunteer") {
             fireAndForget(
-                notifyVolunteerAssigned({
+                notifyVolunteerAssignedParticipants({
                     incidentId: normalizedIncident._id,
                     volunteerName: targetUser.name || null,
                 }),
-                `volunteer-assigned:${normalizedIncident._id}`
+                "volunteer-assigned"
             );
         }
+
+        fireAndForget(
+            notifyAdminAudit({
+                action: "incident-reassignment",
+                details: `Incident ${normalizedIncident._id} reassigned by ${meId}. Target user: ${targetId}.`,
+                meta: {
+                    incidentId: normalizedIncident._id?.toString?.() || String(normalizedIncident._id),
+                    actorId: meId,
+                    targetUserId: targetId,
+                    actionType: "assign",
+                },
+            }),
+            "admin-audit-reassign-assign"
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,
@@ -357,6 +397,29 @@ const unassignUser = async (req, res, next) => {
                 autoClosedBecauseNoVictims,
             },
         });
+
+        fireAndForget(
+            notifyIncidentUnassignedParticipants({
+                incidentId: normalizedIncident._id,
+                targetUserId: userId,
+                actorUserId: me._id,
+            }),
+            "participant-unassigned"
+        );
+
+        fireAndForget(
+            notifyAdminAudit({
+                action: "incident-reassignment",
+                details: `Incident ${normalizedIncident._id} unassigned by ${meId}. Target user: ${userId}.`,
+                meta: {
+                    incidentId: normalizedIncident._id?.toString?.() || String(normalizedIncident._id),
+                    actorId: meId,
+                    targetUserId: userId,
+                    actionType: "unassign",
+                },
+            }),
+            "admin-audit-reassign-unassign"
+        );
 
         return sendSuccess(res, {
             statusCode: StatusCodes.OK,

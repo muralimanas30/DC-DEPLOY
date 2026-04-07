@@ -5,7 +5,6 @@ const { authRouter } = require('./auth');
 const { userRouter } = require('./user');
 const { incidentRouter } = require('./incident');
 const { smsRouter } = require('./sms');
-const { telegramRouter } = require('./telegram');
 
 const router = express.Router();
 
@@ -30,5 +29,4 @@ router.use('/auth', authRouter);
 router.use('/user', userRouter);
 router.use('/incidents', incidentRouter);
 router.use('/sms', smsRouter);
-router.use('/telegram', telegramRouter);
 module.exports = { router }

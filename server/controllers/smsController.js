@@ -4,11 +4,13 @@ const { AppError } = require('../errorHandler/errorHandler');
 const Incident = require('../models/Incident');
 const User = require('../models/User');
 const { sendSuccess } = require('../utils/response');
+const { logger } = require('../utils/logger');
 const {
     normalizePhone,
     createInboundReportRecord,
-    processIncomingSmsWebhook,
+    processSmsGateWebhookEvent,
     sendIncidentUpdateToVictims,
+    sendSmsTestMessage,
     listIncidentSmsLogs,
 } = require('../services/sms');
 
@@ -81,10 +83,7 @@ const createReportSms = async (req, res, next) => {
             throw new AppError('Invalid incidentId', StatusCodes.BAD_REQUEST, 'INVALID_INCIDENT_ID');
         }
 
-        const resolvedPhone = normalizePhone(phone || currentUser.phone);
-        if (!resolvedPhone) {
-            throw new AppError('A valid phone number is required for SMS report', StatusCodes.BAD_REQUEST, 'SMS_REPORT_PHONE_REQUIRED');
-        }
+        const resolvedPhone = normalizePhone(phone || currentUser.phone) || null;
 
         const locationPayload = (location && typeof location === 'object')
             ? location
@@ -206,26 +205,84 @@ const getIncidentSmsLogs = async (req, res, next) => {
     }
 };
 
-const webhookIncomingSms = async (req, res, next) => {
+const sendSmsTest = async (req, res, next) => {
     try {
-        const sourceIp = req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || 'unknown';
-        console.log(`[SMS-WEBHOOK] Hit trace=${req.traceId || 'n/a'} ip=${sourceIp}`);
+        const currentUser = await getCurrentUser(req);
+        if (!currentUser?._id) {
+            throw new AppError('Unauthorized', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+        }
 
-        const result = await processIncomingSmsWebhook({ payload: req.body || {} });
+        if (currentUser.activeRole !== 'admin') {
+            throw new AppError('Only admins can trigger SMS tests', StatusCodes.FORBIDDEN, 'SMS_TEST_FORBIDDEN');
+        }
 
-        console.log(
-            `[SMS-WEBHOOK] Completed trace=${req.traceId || 'n/a'} duplicate=${result.duplicate} incident=${result.incidentId || 'n/a'} record=${result.smsRecordId || 'n/a'}`
-        );
+        const { toPhone = null, message = null } = req.body || {};
+        const result = await sendSmsTestMessage({
+            toPhone,
+            message,
+            requestedBy: currentUser._id,
+        });
 
         return sendSuccess(res, {
-            statusCode: result.duplicate ? StatusCodes.OK : StatusCodes.CREATED,
-            msg: result.duplicate
-                ? 'Duplicate SMS received. Existing incident kept.'
-                : 'Incident created from inbound SMS webhook',
+            statusCode: StatusCodes.OK,
+            msg: 'SMS test request processed',
             data: result,
         });
     } catch (error) {
-        console.error(`[SMS-WEBHOOK] Failed trace=${req.traceId || 'n/a'}:`, error?.message || error);
+        next(error);
+    }
+};
+
+const webhookIncomingSms = async (req, res, next) => {
+    try {
+        const sourceIp = req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || 'unknown';
+        logger.webhook(`Inbound webhook hit trace=${logger.highlight(req.traceId || 'n/a')} ip=${logger.highlight(sourceIp)}`);
+
+        const result = await processSmsGateWebhookEvent({
+            payload: req.body || {},
+            headers: req.headers || {},
+            rawBody: req.rawBody || '',
+        });
+
+        if (result.type === 'inbound') {
+            logger.webhook(
+                `Inbound handled trace=${logger.highlight(req.traceId || 'n/a')} duplicate=${logger.highlight(result.duplicate)} incident=${logger.highlight(result.incidentId || 'n/a')} record=${logger.highlight(result.smsRecordId || 'n/a')}`
+            );
+
+            if (result.ignored) {
+                return sendSuccess(res, {
+                    statusCode: StatusCodes.OK,
+                    msg: 'Inbound SMS ignored. Event not created.',
+                    data: result,
+                });
+            }
+
+            return sendSuccess(res, {
+                statusCode: result.duplicate ? StatusCodes.OK : StatusCodes.CREATED,
+                msg: result.duplicate
+                    ? 'Duplicate SMS received. Existing incident kept.'
+                    : 'Incident created from inbound SMS webhook',
+                data: result,
+            });
+        }
+
+        if (result.type === 'status') {
+            return sendSuccess(res, {
+                statusCode: StatusCodes.OK,
+                msg: result.updated
+                    ? `SMS status updated from webhook (${result.event})`
+                    : `SMS status webhook received (${result.event})`,
+                data: result,
+            });
+        }
+
+        return sendSuccess(res, {
+            statusCode: StatusCodes.OK,
+            msg: `Ignored SMS webhook event: ${result.event || 'unknown'}`,
+            data: result,
+        });
+    } catch (error) {
+        logger.error('webhook', `Webhook failed trace=${req.traceId || 'n/a'}`, error?.message || error);
         next(error);
     }
 };
@@ -235,6 +292,7 @@ const smsController = {
     createReportSms,
     notifyIncidentVictims,
     getIncidentSmsLogs,
+    sendSmsTest,
 };
 
 module.exports = { smsController };

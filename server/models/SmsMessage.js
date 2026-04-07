@@ -27,7 +27,7 @@ const smsMessageSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ['queued', 'received', 'sent', 'failed', 'simulated'],
+            enum: ['queued', 'received', 'sent', 'delivered', 'failed', 'simulated'],
             default: 'queued',
             index: true,
         },
@@ -61,7 +61,7 @@ const smsMessageSchema = new mongoose.Schema(
         },
         provider: {
             type: String,
-            default: 'twilio',
+            default: 'sms-gate',
         },
         providerMessageId: {
             type: String,
